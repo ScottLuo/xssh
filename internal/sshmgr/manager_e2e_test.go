@@ -53,12 +53,12 @@ func TestOpenTab_Password(t *testing.T) {
 
 	var mu sync.Mutex
 	var out []string
-	onOut := func(data []byte) { mu.Lock(); out = append(out, string(data)); mu.Unlock() }
+	onOut := func(sid string, data []byte) { mu.Lock(); out = append(out, string(data)); mu.Unlock() }
 
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, onOut)
+	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, onOut, nil)
 	if err != nil {
 		t.Fatalf("OpenTab: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestOpenTab_KeyAuth(t *testing.T) {
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func([]byte) {}); err != nil {
+	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func(string, []byte) {}, nil); err != nil {
 		t.Fatalf("OpenTab (key auth): %v", err)
 	}
 }
@@ -117,7 +117,7 @@ func TestOpenTab_AuthFailure(t *testing.T) {
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func([]byte) {}); err == nil {
+	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func(string, []byte) {}, nil); err == nil {
 		t.Error("expected auth failure error, got nil")
 	}
 }
@@ -135,10 +135,10 @@ func TestClientReuse(t *testing.T) {
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func([]byte) {}); err != nil {
+	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func(string, []byte) {}, nil); err != nil {
 		t.Fatalf("first OpenTab: %v", err)
 	}
-	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func([]byte) {}); err != nil {
+	if _, _, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func(string, []byte) {}, nil); err != nil {
 		t.Fatalf("second OpenTab: %v", err)
 	}
 
@@ -162,12 +162,12 @@ func TestSession_WriteEcho(t *testing.T) {
 
 	var mu sync.Mutex
 	var got []string
-	onOut := func(data []byte) { mu.Lock(); got = append(got, string(data)); mu.Unlock() }
+	onOut := func(sid string, data []byte) { mu.Lock(); got = append(got, string(data)); mu.Unlock() }
 
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, onOut)
+	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, onOut, nil)
 	if err != nil {
 		t.Fatalf("OpenTab: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestSession_Resize(t *testing.T) {
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func([]byte) {})
+	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func(string, []byte) {}, nil)
 	if err != nil {
 		t.Fatalf("OpenTab: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestNoGoroutineLeak(t *testing.T) {
 	m := NewManager()
 	defer m.CloseAll(context.Background())
 
-	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func([]byte) {})
+	sid, sess, err := m.OpenTab(context.Background(), h.ID, h, 80, 24, func(string, []byte) {}, nil)
 	if err != nil {
 		t.Fatalf("OpenTab: %v", err)
 	}

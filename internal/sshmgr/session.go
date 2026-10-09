@@ -20,8 +20,8 @@ type Session struct {
 	stdin    io.WriteCloser
 	stdout   io.Reader
 	stderr   io.Reader
-	onOut    func(data []byte)
-	onClosed func()
+	onOut    func(sid string, data []byte)
+	onClosed func(sid string)
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       *sync.WaitGroup

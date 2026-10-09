@@ -25,7 +25,7 @@ func startPump(s *Session) {
 		s.wg.Wait()
 		close(s.done)
 		if s.onClosed != nil {
-			s.onClosed()
+			s.onClosed(s.ID)
 		}
 	}()
 }
@@ -43,7 +43,7 @@ func pumpReader(s *Session, r io.Reader) {
 		}
 		n, err := r.Read(buf)
 		if n > 0 && s.onOut != nil {
-			s.onOut(buf[:n])
+			s.onOut(s.ID, buf[:n])
 		}
 		if err != nil {
 			return // io.EOF or channel closed
