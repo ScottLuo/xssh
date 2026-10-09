@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/ncruces/go-sqlite3 v0.35.6
+	github.com/oklog/ulid/v2 v2.1.2
 	github.com/wailsapp/wails/v2 v2.16.0
 	golang.org/x/crypto v0.58.0
 )
