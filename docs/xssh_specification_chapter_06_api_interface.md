@@ -20,10 +20,13 @@ The Wails binding layer is the single communication channel between the Go backe
 package main
 
 type App struct {
-    ctx    context.Context
-    store  *store.EncryptedDB
-    hosts  *store.HostRepo
-    mgr    *sshmgr.Manager
+    ctx      context.Context
+    store    *store.EncryptedDB
+    hosts    *store.HostRepo
+    settings *store.SettingsRepo
+    mgr      *sshmgr.Manager
+    dbPath   string
+    salt     []byte
 }
 ```
 
