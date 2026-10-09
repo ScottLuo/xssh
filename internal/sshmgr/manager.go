@@ -187,7 +187,9 @@ func (m *Manager) authMethods(h store.Host) []ssh.AuthMethod {
 
 // OpenTab creates a new PTY-backed terminal session for the host.
 // It returns the generated ULID session ID, the live session, and any error.
-func (m *Manager) OpenTab(ctx context.Context, hostID string, h store.Host, cols, rows uint16, onOut func([]byte)) (string, *Session, error) {
+// The onOut callback is invoked for each chunk of PTY output, and onClosed
+// is invoked when the session's pump goroutines have all finished.
+func (m *Manager) OpenTab(ctx context.Context, hostID string, h store.Host, cols, rows uint16, onOut func(sid string, data []byte), onClosed func(sid string)) (string, *Session, error) {
 	sc, err := m.clientFor(ctx, hostID, h)
 	if err != nil {
 		return "", nil, err
@@ -247,16 +249,17 @@ func (m *Manager) OpenTab(ctx context.Context, hostID string, h store.Host, cols
 
 	sCtx, sCancel := context.WithCancel(ctx)
 	session := &Session{
-		ID:     sid,
-		hostID: hostID,
-		client: client,
-		sess:   sess,
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
-		onOut:  onOut,
-		ctx:    sCtx,
-		cancel: sCancel,
+		ID:       sid,
+		hostID:   hostID,
+		client:   client,
+		sess:     sess,
+		stdin:    stdin,
+		stdout:   stdout,
+		stderr:   stderr,
+		onOut:    onOut,
+		onClosed: onClosed,
+		ctx:      sCtx,
+		cancel:   sCancel,
 	}
 
 	m.mu.Lock()

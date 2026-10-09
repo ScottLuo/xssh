@@ -21,7 +21,7 @@ func (e *eofReader) Read(p []byte) (int, error) {
 
 // newPumpedSession builds a Session with stdout/stderr readers and starts the
 // I/O pump so the Done() channel becomes meaningful.
-func newPumpedSession(t *testing.T, stdout, stderr io.Reader, onOut func([]byte)) *Session {
+func newPumpedSession(t *testing.T, stdout, stderr io.Reader, onOut func(sid string, data []byte)) *Session {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
@@ -99,7 +99,7 @@ func TestSession_Done_Channel(t *testing.T) {
 	s := newPumpedSession(t,
 		bytes.NewReader([]byte("hello\n")), // stdout delivers then EOF
 		&eofReader{},                       // stderr EOF immediately
-		func(data []byte) { out.Write(data) },
+		func(sid string, data []byte) { out.Write(data) },
 	)
 
 	if s.Done() == nil {
@@ -124,7 +124,7 @@ func TestSession_Pump_StderrDelivery(t *testing.T) {
 	s := newPumpedSession(t,
 		&eofReader{},                        // stdout EOF immediately
 		bytes.NewReader([]byte("err-line")), // stderr delivers then EOF
-		func(data []byte) { out.Write(data) },
+		func(sid string, data []byte) { out.Write(data) },
 	)
 	select {
 	case <-s.Done():

@@ -230,6 +230,20 @@ func metaPathFor(dbPath string) string {
 	return filepath.Join(filepath.Dir(dbPath), "xssh-meta.json")
 }
 
+// ReadSalt reads the encryption salt from xssh-meta.json in the given directory.
+// The meta file is expected at <dir>/xssh-meta.json.
+func ReadSalt(dir string) ([]byte, error) {
+	metaPath := filepath.Join(dir, "xssh-meta.json")
+	return readSalt(metaPath)
+}
+
+// WriteSalt writes the encryption salt to xssh-meta.json in the given directory.
+// The meta file is expected at <dir>/xssh-meta.json.
+func WriteSalt(dir string, salt []byte) error {
+	metaPath := filepath.Join(dir, "xssh-meta.json")
+	return writeSalt(metaPath, salt)
+}
+
 // migrate runs idempotent schema migrations (CREATE TABLE IF NOT EXISTS).
 func migrate(ctx context.Context, db *sql.DB) error {
 	statements := []string{
