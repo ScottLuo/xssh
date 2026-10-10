@@ -1,42 +1,13 @@
-// Wails-generated JS bindings stub.
-// In a real Wails app, this is auto-generated and calls into Go via IPC.
-// For standalone builds (vite build), it provides the module structure.
-import { appCall } from '../../runtime/runtime.js';
-
-class App {
-    static GetHosts() {
-        return appCall('GetHosts');
-    }
-    static SaveHost(h) {
-        return appCall('SaveHost', h);
-    }
-    static DeleteHost(id) {
-        return appCall('DeleteHost', id);
-    }
-    static OpenTab(hostID, cols, rows) {
-        return appCall('OpenTab', hostID, cols, rows);
-    }
-    static Write(sid, data) {
-        return appCall('Write', sid, data);
-    }
-    static Resize(sid, cols, rows) {
-        return appCall('Resize', sid, cols, rows);
-    }
-    static CloseTab(sid) {
-        return appCall('CloseTab', sid);
-    }
-    static UnlockDB(passphrase) {
-        return appCall('UnlockDB', passphrase);
-    }
-    static SetupDB(passphrase) {
-        return appCall('SetupDB', passphrase);
-    }
-    static GetSettings() {
-        return appCall('GetSettings');
-    }
-    static SetSetting(key, value) {
-        return appCall('SetSetting', key, value);
-    }
-}
-
-export { App };
+// @ts-check
+// Cynan
+export function CloseTab(arg1) { return window['go']['main']['App']['CloseTab'](arg1); }
+export function DeleteHost(arg1) { return window['go']['main']['App']['DeleteHost'](arg1); }
+export function GetHosts() { return window['go']['main']['App']['GetHosts'](); }
+export function GetSettings() { return window['go']['main']['App']['GetSettings'](); }
+export function OpenTab(arg1, arg2, arg3) { return window['go']['main']['App']['OpenTab'](arg1, arg2, arg3); }
+export function Resize(arg1, arg2, arg3) { return window['go']['main']['App']['Resize'](arg1, arg2, arg3); }
+export function SaveHost(arg1) { return window['go']['main']['App']['SaveHost'](arg1); }
+export function SetSetting(arg1, arg2) { return window['go']['main']['App']['SetSetting'](arg1, arg2); }
+export function SetupDB(arg1) { return window['go']['main']['App']['SetupDB'](arg1); }
+export function UnlockDB(arg1) { return window['go']['main']['App']['UnlockDB'](arg1); }
+export function Write(arg1, arg2) { return window['go']['main']['App']['Write'](arg1, arg2); }

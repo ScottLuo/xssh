@@ -1,55 +1,50 @@
-// Wails runtime stub for standalone builds.
-// In a real Wails app, this is auto-generated and communicates with Go via IPC.
-// For `vite build`, it provides the module structure and no-op stubs.
+// @ts-check
+// Cynan
+let __eventId = 0;
+const __listeners = new Map(); // name -> Map<id, cb>
 
-const eventListeners = new Map();
-
-export function on(event, callback) {
-    if (!eventListeners.has(event)) {
-        eventListeners.set(event, new Set());
-    }
-    eventListeners.get(event).add(callback);
-    return () => {
-        const set = eventListeners.get(event);
-        if (set) set.delete(callback);
-    };
+export function EventsOn(eventName, callback) {
+  const id = String(++__eventId);
+  if (!__listeners.has(eventName)) __listeners.set(eventName, new Map());
+  __listeners.get(eventName).set(id, callback);
+  return id;
 }
 
-export function off(event, callback) {
-    const set = eventListeners.get(event);
-    if (set) set.delete(callback);
+export function EventsOff(eventName, ...eventIDs) {
+  const m = __listeners.get(eventName);
+  if (!m) return;
+  for (const id of eventIDs) m.delete(id);
 }
 
-export function emit(event, ...args) {
-    const set = eventListeners.get(event);
-    if (set) {
-        for (const cb of set) {
-            cb(...args);
-        }
-    }
+export function EventsOnce(eventName, callback) {
+  const id = EventsOn(eventName, (...a) => {
+    EventsOff(eventName, id);
+    callback(...a);
+  });
+  return id;
 }
 
-export function appCall(method, ...args) {
-    // In a real Wails app, this would call into Go via the embedded runtime.
-    // For standalone builds, resolve immediately (useful for preview).
-    return Promise.resolve();
+export function EventsEmit(eventName, ...data) {
+  const m = __listeners.get(eventName);
+  if (!m) return;
+  for (const cb of m.values()) cb(...data);
 }
 
-export const Events = { on, off, emit };
+export function EventsOffAll() {
+  __listeners.clear();
+}
 
-export const Window = {
-    Minimise() {},
-    Maximise() {},
-    Unmaximise() {},
-    Fullscreen() {},
-    Unfullscreen() {},
-    Close() {},
-};
+export function WindowMinimise() { window['runtime'] && window['runtime']['WindowMinimise'] && window['runtime']['WindowMinimise'](); }
+export function WindowMaximise() { window['runtime'] && window['runtime']['WindowMaximise'] && window['runtime']['WindowMaximise'](); }
+export function WindowUnmaximise() { window['runtime'] && window['runtime']['WindowUnmaximise'] && window['runtime']['WindowUnmaximise'](); }
+export function WindowFullscreen() { window['runtime'] && window['runtime']['WindowFullscreen'] && window['runtime']['WindowFullscreen'](); }
+export function WindowUnfullscreen() { window['runtime'] && window['runtime']['WindowUnfullscreen'] && window['runtime']['WindowUnfullscreen'](); }
+export function WindowClose() { window['runtime'] && window['runtime']['WindowClose'] && window['runtime']['WindowClose'](); }
 
-export const Log = {
-    log: (msg) => console.log('[log]', msg),
-    info: (msg) => console.info('[info]', msg),
-    warn: (msg) => console.warn('[warn]', msg),
-    error: (msg) => console.error('[error]', msg),
-    debug: (msg) => console.debug('[debug]', msg),
-};
+export function LogPrint(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](1, message); }
+export function LogTrace(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](0, message); }
+export function LogDebug(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](4, message); }
+export function LogInfo(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](2, message); }
+export function LogWarning(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](3, message); }
+export function LogError(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](5, message); }
+export function LogFatal(message) { window['runtime'] && window['runtime']['Log'] && window['runtime']['Log'](6, message); }

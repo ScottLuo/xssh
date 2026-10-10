@@ -1,8 +1,8 @@
 // xterm.ts — xterm.js wrapper: terminal creation, I/O wiring, resize, cleanup.
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { App } from '../wailsjs/go/main/App';
-import { Events } from '../wailsjs/runtime/runtime';
+import { Write, Resize } from '../wailsjs/go/main/App';
+import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 /** The result of wiring a terminal to a session. */
 export interface WiredTerminal {
@@ -60,7 +60,7 @@ export function wireIO(
     let pending: string[] = [];
     let flushing = false;
 
-    const unsubOut = Events.on(`ssh:out:${sessionId}`, (payload: unknown) => {
+    const outEvtId = EventsOn(`ssh:out:${sessionId}`, (payload: unknown) => {
         const b64 = payload as string;
         pending.push(atob(b64));
 
@@ -76,7 +76,7 @@ export function wireIO(
 
     // --- Session closed event ---
     let closed = false;
-    const unsubClosed = Events.on(`ssh:closed:${sessionId}`, () => {
+    const closedEvtId = EventsOn(`ssh:closed:${sessionId}`, () => {
         if (closed) return;
         closed = true;
         // Write a dimmed "[session ended]" marker to the terminal.
@@ -87,7 +87,7 @@ export function wireIO(
     const dataSubscription = term.onData((data: string) => {
         // Unicode-safe base64 encoding (handles CJK, emoji, etc.)
         const b64 = btoa(unescape(encodeURIComponent(data)));
-        App.Write(sessionId, b64).catch(() => {
+        Write(sessionId, b64).catch(() => {
             /* session may already be closed — ignore */
         });
     });
@@ -96,7 +96,7 @@ export function wireIO(
     const resizeObserver = new ResizeObserver(() => {
         try {
             fit.fit();
-            App.Resize(sessionId, term.cols, term.rows).catch(() => {
+            Resize(sessionId, term.cols, term.rows).catch(() => {
                 /* session may already be closed — ignore */
             });
         } catch {
@@ -107,8 +107,8 @@ export function wireIO(
 
     // --- Cleanup ---
     const dispose = (): void => {
-        unsubOut();
-        unsubClosed();
+        EventsOff(`ssh:out:${sessionId}`, outEvtId);
+        EventsOff(`ssh:closed:${sessionId}`, closedEvtId);
         dataSubscription.dispose();
         resizeObserver.disconnect();
         term.dispose();
