@@ -15,6 +15,10 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// emitEvent is the function used to emit Wails events. It can be overridden
+// in tests to capture events without a live Wails runtime context.
+var emitEvent = wailsRuntime.EventsEmit
+
 // App is the Wails application struct that exposes binding methods to the frontend.
 type App struct {
 	ctx      context.Context
@@ -117,7 +121,7 @@ func (a *App) SaveHost(h store.Host) error {
 	if err := a.hosts.Put(a.ctx, h); err != nil {
 		return fmt.Errorf("save host: %w", err)
 	}
-	wailsRuntime.EventsEmit(a.ctx, "hosts:updated")
+	emitEvent(a.ctx, "hosts:updated")
 	return nil
 }
 
@@ -131,7 +135,7 @@ func (a *App) DeleteHost(id string) error {
 		return fmt.Errorf("delete host: %w", err)
 	}
 	a.mgr.CloseSessionsForHost(id)
-	wailsRuntime.EventsEmit(a.ctx, "hosts:updated")
+	emitEvent(a.ctx, "hosts:updated")
 	return nil
 }
 
@@ -148,13 +152,16 @@ func (a *App) OpenTab(hostID string, cols, rows int) (string, error) {
 
 	// onOut is called from the pump goroutine with the session ID; we
 	// base64-encode the data and emit a Wails event.
+	// Capture emitFn now so the closure is stable across the test
+	// teardown that may reset emitEvent.
+	emitFn := emitEvent
 	onOut := func(sid string, data []byte) {
 		b64 := base64.StdEncoding.EncodeToString(data)
-		wailsRuntime.EventsEmit(a.ctx, "ssh:out:"+sid, b64)
+		emitFn(a.ctx, "ssh:out:"+sid, b64)
 	}
 	// onClosed is called when the session's pump goroutines have finished.
 	onClosed := func(sid string) {
-		wailsRuntime.EventsEmit(a.ctx, "ssh:closed:"+sid)
+		emitFn(a.ctx, "ssh:closed:"+sid)
 	}
 
 	sid, _, err := a.mgr.OpenTab(a.ctx, hostID, *h, uint16(cols), uint16(rows), onOut, onClosed)

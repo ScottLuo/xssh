@@ -1,8 +1,8 @@
 package sshmgr
 
-// This file provides an in-process SSH server used by the unit tests to
-// exercise the Manager and Session against a real local SSH endpoint. It
-// needs no external sshd, so the tests remain self-contained.
+// This file provides an in-process SSH server used by the unit and
+// integration tests to exercise the Manager and Session against a real local
+// SSH endpoint. It needs no external sshd, so the tests remain self-contained.
 
 import (
 	"crypto/rsa"

@@ -13,10 +13,16 @@ import (
 )
 
 // newTestApp creates an App with a temp directory for DB, suitable for
-// testing without a real Wails runtime context.
+// testing without a real Wails runtime context. It also installs a no-op
+// emitEvent so that pump goroutines that finish after the test ends do not
+// call wailsRuntime.EventsEmit with context.Background() (which panics).
+// Tests that need to capture events should override emitEvent themselves.
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	dir := t.TempDir()
+	oldEmit := emitEvent
+	emitEvent = func(context.Context, string, ...interface{}) {}
+	t.Cleanup(func() { emitEvent = oldEmit })
 	return &App{
 		ctx:    context.Background(),
 		dbPath: filepath.Join(dir, "xssh.db"),

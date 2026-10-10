@@ -23,10 +23,10 @@ func startPump(s *Session) {
 	}()
 	go func() {
 		s.wg.Wait()
-		close(s.done)
 		if s.onClosed != nil {
 			s.onClosed(s.ID)
 		}
+		close(s.done)
 	}()
 }
 

@@ -317,21 +317,9 @@ func (m *Manager) CloseTab(ctx context.Context, sid string) error {
 	m.mu.Unlock()
 
 	// Close stdin + SSH session and cancel context.
+	// The session is fully drained asynchronously; the onClosed callback
+	// is invoked by the pump watcher once all reader goroutines exit.
 	s.Close()
-
-	// Wait for pump goroutines to drain, bounded by the session context.
-	if s.wg != nil {
-		done := make(chan struct{})
-		go func() {
-			s.wg.Wait()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-s.ctx.Done():
-		case <-ctx.Done():
-		}
-	}
 	return nil
 }
 
