@@ -213,14 +213,17 @@ frontend/
 ├── vite.config.ts
 ├── tsconfig.json
 ├── package.json
+├── vitest.config.ts
 └── src/
-    ├── main.ts          // Entry point, initializes app
-    ├── app.ts           // TabManager, hosts state
-    ├── hosts.ts         // Host card rendering, CRUD modals
-    ├── tabs.ts          // Tab strip management
-    ├── xterm.ts         // createTerminal, I/O wiring
-    ├── styles.css       // Layout, host cards, tab styling
-    └── types.d.ts       // Wails-generated binding types
+    ├── main.ts          // Entry point: passphrase → hosts → tabs
+    ├── hosts.ts         // Host card rendering, CRUD modals, hosts:updated listener
+    ├── tabs.ts          // TabManager: open/close/switch, keyboard nav
+    ├── xterm.ts         // createTerminal, wireIO (rAF coalescing, resize, cleanup)
+    ├── passphrase.ts    // First-run SetupDB / subsequent-run UnlockDB UI
+    ├── types.ts         // Shared TypeScript types (Host, TabEntry, OPEN_TAB_EVENT)
+    ├── styles.css       // Dark theme, layout, host cards, tab strip, modal
+    └── test/
+        └── setup.ts     // Test mocks (Terminal, FitAddon, ResizeObserver, rAF)
 ```
 
 ## 5.7 Wails Generated Bindings

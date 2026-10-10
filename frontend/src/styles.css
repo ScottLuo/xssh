@@ -1,0 +1,363 @@
+/* xssh — dark theme base */
+:root {
+    --bg: #1e1e1e;
+    --bg-elev: #252526;
+    --bg-hover: #2a2d2e;
+    --fg: #d4d4d4;
+    --fg-dim: #8b8b8b;
+    --border: #3a3a3a;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --danger: #ef4444;
+    --stripe: #6b7280;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, "Segoe UI", "Inter", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    overflow: hidden;
+}
+
+#app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* --- Left panel (hosts) --- */
+.left-panel {
+    width: 250px;
+    min-width: 200px;
+    max-width: 400px;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--bg-elev);
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    font-weight: 700;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.btn-icon {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-icon:hover { background: var(--bg-hover); border-color: var(--accent); }
+
+.host-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+/* --- Host card --- */
+.host-card {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    overflow: hidden;
+}
+.host-card:hover { border-color: var(--accent); background: var(--bg-hover); }
+.host-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.host-card .stripe {
+    flex: 0 0 6px;
+    align-self: stretch;
+    background: var(--stripe);
+    border-radius: 3px;
+}
+.host-card .card-body { flex: 1; min-width: 0; }
+.host-card .card-name {
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.host-card .card-meta {
+    font-size: 12px;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.host-card .card-actions {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: none;
+    gap: 4px;
+}
+.host-card:hover .card-actions,
+.host-card:focus-within .card-actions { display: flex; }
+
+.card-actions button {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+.card-actions button:hover { border-color: var(--accent); }
+.card-actions button.delete:hover { border-color: var(--danger); color: var(--danger); }
+
+.host-empty {
+    color: var(--fg-dim);
+    font-size: 13px;
+    padding: 12px;
+    text-align: center;
+}
+
+/* --- Right panel (tabs + terminal) --- */
+.right-panel {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.tab-strip {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    height: 36px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elev);
+}
+
+.tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.tab:hover { background: var(--bg-hover); }
+.tab.active {
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow: inset 0 2px 0 var(--accent);
+}
+.tab .tab-label {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tab .tab-close {
+    background: transparent;
+    border: none;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+.tab .tab-close:hover { color: var(--fg); background: var(--border); }
+.tab.ended .tab-label { color: var(--fg-dim); font-style: italic; }
+
+.terminal-area {
+    flex: 1 1 auto;
+    position: relative;
+    min-height: 0;
+    background: var(--bg);
+}
+
+.terminal-container {
+    position: absolute;
+    inset: 0;
+    padding: 4px 6px;
+}
+.terminal-container.hidden { display: none; }
+
+.empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-dim);
+    font-size: 14px;
+    pointer-events: none;
+}
+
+/* --- Modal --- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+.modal-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 420px;
+    max-width: 90vw;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.modal-title {
+    margin: 0 0 16px;
+    font-size: 16px;
+    font-weight: 700;
+}
+.form-row { margin-bottom: 12px; }
+.form-row label {
+    display: block;
+    font-size: 12px;
+    color: var(--fg-dim);
+    margin-bottom: 4px;
+}
+.form-row input,
+.form-row select,
+.form-row textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.15s ease;
+}
+.form-row input:focus,
+.form-row select:focus,
+.form-row textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.form-row textarea { resize: vertical; min-height: 60px; }
+.form-row .hint { font-size: 11px; color: var(--fg-dim); margin-top: 3px; }
+
+.color-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.color-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+}
+.color-swatch.selected { border-color: #fff; }
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+}
+.btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover { background: var(--bg-hover); }
+.btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.btn.primary:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* --- Passphrase screen --- */
+.passflow-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+.passflow-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 360px;
+    max-width: 90vw;
+    padding: 28px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.passflow-title { margin: 0 0 4px; font-size: 20px; font-weight: 700; }
+.passflow-sub { margin: 0 0 20px; color: var(--fg-dim); font-size: 13px; }
+.passflow-card input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin-bottom: 14px;
+    transition: border-color 0.15s ease;
+}
+.passflow-card input:focus { outline: none; border-color: var(--accent); }
+.passflow-error {
+    color: var(--danger);
+    font-size: 13px;
+    min-height: 18px;
+    margin-bottom: 10px;
+}
+.passflow-card .btn { width: 100%; }
+
+/* xterm font smoothing */
+.xterm { position: absolute; inset: 0; }
