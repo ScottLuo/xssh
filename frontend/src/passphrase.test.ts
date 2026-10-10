@@ -4,10 +4,11 @@ function setupMocks() {
     const UnlockDB = vi.fn();
     const SetupDB = vi.fn();
     vi.doMock('../wailsjs/go/main/App', () => ({
-        App: { UnlockDB, SetupDB },
+        UnlockDB, SetupDB,
     }));
     vi.doMock('../wailsjs/runtime/runtime', () => ({
-        Events: { on: vi.fn() },
+        EventsOn: vi.fn(() => 'evt-1'),
+        EventsOff: vi.fn(),
     }));
     return { UnlockDB, SetupDB };
 }
