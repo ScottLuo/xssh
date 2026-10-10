@@ -3,19 +3,23 @@ import type { Terminal } from '@xterm/xterm';
 
 /** A controllable in-memory event bus to drive Wails event subscriptions. */
 function createEventBus() {
-    const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+    let nextId = 0;
+    const listeners = new Map<string, Map<string, (...args: unknown[]) => void>>();
     return {
-        on(event: string, cb: (...args: unknown[]) => void): () => void {
-            if (!listeners.has(event)) listeners.set(event, new Set());
-            listeners.get(event)!.add(cb);
-            return () => {
-                const set = listeners.get(event);
-                if (set) set.delete(cb);
-            };
+        on(event: string, cb: (...args: unknown[]) => void): string {
+            const id = `evt-${++nextId}`;
+            if (!listeners.has(event)) listeners.set(event, new Map());
+            listeners.get(event)!.set(id, cb);
+            return id;
+        },
+        off(event: string, ...ids: string[]): void {
+            const m = listeners.get(event);
+            if (!m) return;
+            for (const id of ids) m.delete(id);
         },
         emit(event: string, ...args: unknown[]): void {
-            const set = listeners.get(event);
-            if (set) for (const cb of set) cb(...args);
+            const m = listeners.get(event);
+            if (m) for (const cb of m.values()) cb(...args);
         },
     };
 }
@@ -42,10 +46,10 @@ let Resize: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
     bus = createEventBus();
-    vi.doMock('../wailsjs/runtime/runtime', () => ({ Events: { on: bus.on } }));
+    vi.doMock('../wailsjs/runtime/runtime', () => ({ EventsOn: bus.on, EventsOff: bus.off }));
     Write = vi.fn().mockResolvedValue(undefined);
     Resize = vi.fn().mockResolvedValue(undefined);
-    vi.doMock('../wailsjs/go/main/App', () => ({ App: { Write, Resize } }));
+    vi.doMock('../wailsjs/go/main/App', () => ({ Write, Resize }));
     vi.resetModules();
     // Clear the global ResizeObserver instance list for isolation.
     (globalThis as unknown as Record<string, unknown>).__roInstances = [];
