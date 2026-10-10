@@ -1,6 +1,6 @@
 // hosts.ts — Left panel: host card rendering and CRUD modals.
-import { App } from '../wailsjs/go/main/App';
-import { Events } from '../wailsjs/runtime/runtime';
+import { GetHosts, SaveHost, DeleteHost } from '../wailsjs/go/main/App';
+import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 import type { Host, HostFormData } from './types';
 import { OPEN_TAB_EVENT } from './types';
 
@@ -75,7 +75,7 @@ export function renderHostCard(host: Host): HTMLElement {
         e.stopPropagation();
         const updated = await showHostModal(host);
         if (updated) {
-            await App.SaveHost(updated).catch(() => { /* refetch via event */ });
+            await SaveHost(updated).catch(() => { /* refetch via event */ });
         }
     });
 
@@ -88,7 +88,7 @@ export function renderHostCard(host: Host): HTMLElement {
         e.stopPropagation();
         const ok = await confirmDelete(host);
         if (ok) {
-            await App.DeleteHost(host.id).catch(() => { /* refetch via event */ });
+            await DeleteHost(host.id).catch(() => { /* refetch via event */ });
         }
     });
 
@@ -404,7 +404,7 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
     addBtn.addEventListener('click', async () => {
         const host = await showHostModal();
         if (host) {
-            await App.SaveHost(host).catch(() => { /* refetch via event */ });
+            await SaveHost(host).catch(() => { /* refetch via event */ });
         }
     });
 
@@ -420,7 +420,7 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
         list.innerHTML = '';
         let hosts: Host[] = [];
         try {
-            hosts = await App.GetHosts();
+            hosts = await GetHosts();
         } catch {
             hosts = [];
         }
@@ -438,9 +438,9 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
 
     await render();
 
-    const unsub = Events.on('hosts:updated', () => {
+    const hostEvtId = EventsOn('hosts:updated', () => {
         void render();
     });
 
-    return unsub;
+    return () => { EventsOff('hosts:updated', hostEvtId); };
 }

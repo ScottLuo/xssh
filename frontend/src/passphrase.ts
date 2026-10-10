@@ -1,13 +1,13 @@
 // passphrase.ts — First-run (Setup) and subsequent-run (Unlock) passphrase UI.
 //
 // Flow:
-//  1. On app start, probe with App.UnlockDB('').
+//  1. On app start, probe with UnlockDB('').
 //     - Error containing "no passphrase set" → first run → Setup mode.
 //     - Other error (DB exists) → Unlock mode.
 //  2. Render a centered card with a password input + submit button.
 //  3. On submit:
-//     - Setup mode → App.SetupDB(passphrase)
-//     - Unlock mode → App.UnlockDB(passphrase)
+//     - Setup mode → SetupDB(passphrase)
+//     - Unlock mode → UnlockDB(passphrase)
 //       - Success → remove overlay, resolve true
 //       - "wrong passphrase" → show error, keep input focused
 //
@@ -15,7 +15,7 @@
 // successfully sets or unlocks the database. This ensures `main()`
 // does not build the main layout until the DB is ready.
 
-import { App } from '../wailsjs/go/main/App';
+import { UnlockDB, SetupDB } from '../wailsjs/go/main/App';
 
 /** Probe result that determines which screen to show. */
 type Mode = 'setup' | 'unlock';
@@ -26,7 +26,7 @@ type Mode = 'setup' | 'unlock';
  */
 async function detectMode(): Promise<Mode> {
     try {
-        await App.UnlockDB('');
+        await UnlockDB('');
         // If UnlockDB with an empty passphrase succeeds, treat as unlocked.
         return 'unlock';
     } catch (err) {
@@ -114,9 +114,9 @@ export function initPassflow(): Promise<boolean> {
             btn.disabled = true;
             try {
                 if (mode === 'setup') {
-                    await App.SetupDB(passphrase);
+                    await SetupDB(passphrase);
                 } else {
-                    await App.UnlockDB(passphrase);
+                    await UnlockDB(passphrase);
                 }
                 // Success: remove the overlay and resolve the Promise.
                 // `main()` will then build the layout into the clean #app.
