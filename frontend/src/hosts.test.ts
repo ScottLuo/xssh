@@ -27,23 +27,22 @@ function setupHostsMocks() {
     // Capture the EventsOn callback so tests can fire the `hosts:updated`
     // broadcast and assert the panel re-renders.
     let updateCb: (() => void) | null = null;
-    let evtId = 0;
+    const unsub = vi.fn();
     const EventsOn = vi.fn((_event: string, cb: () => void) => {
         updateCb = cb;
-        return `evt-${++evtId}`;
+        return unsub;
     });
-    const EventsOff = vi.fn();
     vi.doMock('../wailsjs/go/main/App', () => ({
         GetHosts, SaveHost, DeleteHost,
     }));
     vi.doMock('../wailsjs/runtime/runtime', () => ({
-        EventsOn, EventsOff,
+        EventsOn,
     }));
     return {
         GetHosts,
         SaveHost,
         DeleteHost,
-        EventsOff,
+        unsub,
         fireUpdate: () => { if (updateCb) updateCb(); },
     };
 }

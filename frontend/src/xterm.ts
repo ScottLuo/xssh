@@ -2,7 +2,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Write, Resize } from '../wailsjs/go/main/App';
-import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
+import { EventsOn } from '../wailsjs/runtime/runtime';
 
 /** The result of wiring a terminal to a session. */
 export interface WiredTerminal {
@@ -60,7 +60,7 @@ export function wireIO(
     let pending: string[] = [];
     let flushing = false;
 
-    const outEvtId = EventsOn(`ssh:out:${sessionId}`, (payload: unknown) => {
+    const unsubOut = EventsOn(`ssh:out:${sessionId}`, (payload: unknown) => {
         const b64 = payload as string;
         pending.push(atob(b64));
 
@@ -76,7 +76,7 @@ export function wireIO(
 
     // --- Session closed event ---
     let closed = false;
-    const closedEvtId = EventsOn(`ssh:closed:${sessionId}`, () => {
+    const unsubClosed = EventsOn(`ssh:closed:${sessionId}`, () => {
         if (closed) return;
         closed = true;
         // Write a dimmed "[session ended]" marker to the terminal.
@@ -107,8 +107,8 @@ export function wireIO(
 
     // --- Cleanup ---
     const dispose = (): void => {
-        EventsOff(`ssh:out:${sessionId}`, outEvtId);
-        EventsOff(`ssh:closed:${sessionId}`, closedEvtId);
+        unsubOut();
+        unsubClosed();
         dataSubscription.dispose();
         resizeObserver.disconnect();
         term.dispose();

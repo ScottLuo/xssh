@@ -42,8 +42,7 @@ function setupTabsMocks() {
     CloseTab = vi.fn().mockResolvedValue(undefined);
     vi.doMock('../wailsjs/go/main/App', () => ({ OpenTab, CloseTab }));
     vi.doMock('../wailsjs/runtime/runtime', () => ({
-        EventsOn: vi.fn(() => 'evt-1'),
-        EventsOff: vi.fn(),
+        EventsOn: vi.fn(() => vi.fn()),
     }));
     vi.doMock('./xterm', () => ({
         createAndWireTerminal: vi.fn(() => wiredFactory),

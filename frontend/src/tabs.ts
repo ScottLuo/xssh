@@ -1,6 +1,6 @@
 // tabs.ts — Tab panel: tab bar + terminal area with xterm.js integration.
 import { OpenTab, CloseTab } from '../wailsjs/go/main/App';
-import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
+import { EventsOn } from '../wailsjs/runtime/runtime';
 import { createAndWireTerminal, type WiredTerminal } from './xterm';
 import type { Host, TabEntry } from './types';
 import { OPEN_TAB_EVENT } from './types';
@@ -34,7 +34,7 @@ class TabManager {
     private tabs = new Map<string, TabEntry>();
     private terminals = new Map<string, WiredTerminal>();
     private containers = new Map<string, HTMLDivElement>();
-    private closedEvtIds = new Map<string, string>();
+    private closedUnsubs = new Map<string, () => void>();
     private tabEls = new Map<string, HTMLElement>();
     /** IDs of tabs that represent a connection error (no real Go session). */
     private errorTabs = new Set<string>();
@@ -114,7 +114,7 @@ class TabManager {
         this.containers.set(sid, container);
 
         // Subscribe to session-closed to update tab UI (beyond what wireIO does).
-        this.closedEvtIds.set(sid, EventsOn(`ssh:closed:${sid}`, () => {
+        this.closedUnsubs.set(sid, EventsOn(`ssh:closed:${sid}`, () => {
             this.markEnded(sid);
         }));
 
@@ -134,9 +134,9 @@ class TabManager {
         const isError = this.errorTabs.has(sid);
 
         // Unsubscribe the session-closed listener (real tabs only).
-        const closedEvtId = this.closedEvtIds.get(sid);
-        if (closedEvtId) EventsOff(`ssh:closed:${sid}`, closedEvtId);
-        this.closedEvtIds.delete(sid);
+        const unsub = this.closedUnsubs.get(sid);
+        if (unsub) unsub();
+        this.closedUnsubs.delete(sid);
 
         // Dispose xterm.js (real tabs only).
         const wired = this.terminals.get(sid);

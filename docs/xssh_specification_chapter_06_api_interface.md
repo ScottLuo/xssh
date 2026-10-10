@@ -295,21 +295,23 @@ func main() {
 
 ## 6.8 Event Subscription Lifecycle
 
-The frontend must manage event subscriptions to avoid memory leaks. Wails v2's `EventsOn` returns a **string event ID**; unsubscribing is done by passing that ID to `EventsOff(eventName, eventId)`:
+The frontend must manage event subscriptions to avoid memory leaks. Wails v2's `EventsOn` returns an **unsubscribe closure** (`() => void`); call the returned function to remove just that specific listener:
 
 ```typescript
-import { EventsOn, EventsOff } from "../wailsjs/runtime/runtime";
+import { EventsOn } from "../wailsjs/runtime/runtime";
 import { CloseTab } from "../wailsjs/go/main/App";
 
 // When creating a tab:
-const outId    = EventsOn(`ssh:out:${sid}`, handler);
-const closedId = EventsOn(`ssh:closed:${sid}`, closedHandler);
+const unsubOut    = EventsOn(`ssh:out:${sid}`, handler);
+const unsubClosed = EventsOn(`ssh:closed:${sid}`, closedHandler);
 
 // When closing a tab:
-EventsOff(`ssh:out:${sid}`, outId);      // Remove output event listener
-EventsOff(`ssh:closed:${sid}`, closedId); // Remove closed event listener
-term.dispose();                           // Destroy xterm.js instance
-CloseTab(sid);                            // Close the Go session
+unsubOut();    // Remove output event listener
+unsubClosed(); // Remove closed event listener
+term.dispose();  // Destroy xterm.js instance
+CloseTab(sid);   // Close the Go session
 ```
 
-> **Note**: `EventsOn` returns a **string event ID**. Failing to call `EventsOff(eventName, eventId)` causes the handler to accumulate and slow down output delivery. This replaces the older pattern where `Events.on()` returned an unsubscribe closure.
+`EventsOff(...eventNames)` is also available for bulk removal of all listeners on one or more event names.
+
+> **Note**: `EventsOn` returns a per-listener unsubscribe closure. Failing to call it during teardown causes the handler to accumulate and slow down output delivery.
