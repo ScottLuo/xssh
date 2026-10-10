@@ -66,14 +66,14 @@ Each host card displays:
 
 | Action | Behavior |
 |--------|----------|
-| **Add** | Opens a modal form: name, host, port, user, auth type, auth credential, shell, init commands (textarea, one command per line), color picker. Calls `App.SaveHost(host)` → Go persists to DB → refresh list. |
+| **Add** | Opens a modal form: name, host, port, user, auth type, auth credential, shell, init commands (textarea, one command per line), color picker. Calls `SaveHost(host)` → Go persists to DB → refresh list. |
 | **Edit** | Clicking a card's edit icon opens the same modal pre-filled. |
-| **Delete** | Confirmation dialog → `App.DeleteHost(hostID)` → Go removes from DB + closes all open sessions to that host → refresh list. |
-| **Open tab** | Clicking a card (not the edit/delete buttons) calls `App.OpenTab(hostID, cols, rows)` → creates a new tab. |
+| **Delete** | Confirmation dialog → `DeleteHost(hostID)` → Go removes from DB + closes all open sessions to that host → refresh list. |
+| **Open tab** | Clicking a card (not the edit/delete buttons) calls `OpenTab(hostID, cols, rows)` → creates a new tab. |
 
 ### 5.3.3 Host List Data
 
-The host list is fetched from Go on startup via `App.GetHosts()`. After any CRUD operation, the frontend either refetches or updates the local array.
+The host list is fetched from Go on startup via `GetHosts()`. After any CRUD operation, the frontend either refetches or updates the local array.
 
 ## 5.4 Tab Panel
 
@@ -104,7 +104,7 @@ class TabManager {
 | Behavior | Detail |
 |----------|--------|
 | Click tab | Switch active xterm.js instance (show/hide DOM, or `term.focus()`) |
-| Middle-click tab | Close the tab (calls `App.CloseTab(sid)`) |
+| Middle-click tab | Close the tab (calls `CloseTab(sid)`) |
 | `[+]` button | Opens the active host card's new tab |
 | Tab title | Displays `hostName` (or first 12 chars); if session ended, shows `(closed)` |
 | Multiple tabs to same host | Each gets a new `sessionID` from Go; independent PTY |
@@ -114,7 +114,7 @@ class TabManager {
 When `ssh:closed:<sid>` event fires:
 1. Write `\r\n\x1b[90m[session ended]\x1b[0m\r\n` to the terminal.
 2. Mark the tab title with `(closed)`.
-3. Optionally show a "Reconnect" button overlay (calls `App.OpenTab` again with same host).
+3. Optionally show a "Reconnect" button overlay (calls `OpenTab` again with same host).
 
 ## 5.5 xterm.js Integration
 
@@ -153,7 +153,7 @@ term.onData((data: string) => {
     // data is a string of characters (UTF-8 encoded by xterm.js)
     // Encode as base64 for binary safety over Wails events
     const b64 = btoa(unescape(encodeURIComponent(data)));
-    App.Write(sessionId, b64);
+    Write(sessionId, b64);
 });
 ```
 
@@ -166,7 +166,7 @@ let pending: string[] = [];
 let flushing = false;
 
 function subscribeOutput(sessionId: string, term: Terminal) {
-    Events.on(`ssh:out:${sessionId}`, (payload: string) => {
+    EventsOn(`ssh:out:${sessionId}`, (payload: string) => {
         // payload is base64-encoded bytes
         const binary = atob(payload);
         pending.push(binary);
@@ -181,7 +181,7 @@ function subscribeOutput(sessionId: string, term: Terminal) {
         }
     });
 
-    Events.on(`ssh:closed:${sessionId}`, () => {
+    EventsOn(`ssh:closed:${sessionId}`, () => {
         term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
     });
 }
@@ -192,7 +192,7 @@ function subscribeOutput(sessionId: string, term: Terminal) {
 ```typescript
 const resizeObserver = new ResizeObserver(() => {
     fit.fit();
-    App.Resize(sessionId, term.cols, term.rows);
+    Resize(sessionId, term.cols, term.rows);
 });
 resizeObserver.observe(container);
 ```
@@ -203,7 +203,7 @@ When a tab is closed:
 1. `resizeObserver.disconnect()`
 2. `term.dispose()`
 3. Remove the container div from the DOM
-4. Call `App.CloseTab(sessionId)`
+4. Call `CloseTab(sessionId)`
 
 ## 5.6 Frontend File Structure
 
@@ -228,12 +228,45 @@ frontend/
 
 ## 5.7 Wails Generated Bindings
 
-Wails auto-generates TypeScript bindings in `frontend/wailsjs/go/main/App.js` and `frontend/wailsjs/runtime/runtime.js`. These are **not** hand-edited. The frontend imports them as:
+Wails v2 auto-generates **individual exported functions** in `frontend/wailsjs/go/main/App.js` and `frontend/wailsjs/go/main/App.d.ts`, and in `frontend/wailsjs/runtime/runtime.js` and `frontend/wailsjs/runtime/runtime.d.ts`. These files are **auto-regenerated on every `wails build`** and must not be hand-edited.
+
+The binding pattern is individual named-function exports — **not** a class or a const object:
 
 ```typescript
-import { App } from "../wailsjs/go/main/App";
-import { Events } from "../wailsjs/runtime/runtime";
+// Import Go-bound methods as individual functions
+import {
+    GetHosts,
+    SaveHost,
+    DeleteHost,
+    OpenTab,
+    Write,
+    Resize,
+    CloseTab,
+    UnlockDB,
+    SetupDB,
+    GetSettings,
+    SetSetting,
+} from "../wailsjs/go/main/App";
+
+// Import runtime event functions as individual functions
+import { EventsOn, EventsOff, EventsOnce, EventsEmit, EventsOffAll } from "../wailsjs/runtime/runtime";
 ```
+
+**Event subscription / unsubscribe:**
+
+`EventsOn` returns a **string event ID**. Unsubscribing is done by passing that ID to `EventsOff(eventName, eventId)`:
+
+```typescript
+// Subscribe — returns an event ID string
+const outId    = EventsOn(`ssh:out:${sessionId}`, (payload: string) => { ... });
+const closedId = EventsOn(`ssh:closed:${sessionId}`, () => { ... });
+
+// Unsubscribe — use the event ID
+EventsOff(`ssh:out:${sessionId}`, outId);
+EventsOff(`ssh:closed:${sessionId}`, closedId);
+```
+
+> **Note**: Unlike the old pattern where `Events.on()` returned an unsubscribe closure, Wails v2's `EventsOn` returns an opaque string ID. You must store it and pass it to `EventsOff` to remove the handler.
 
 ## 5.8 Performance Requirements
 
