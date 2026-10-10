@@ -1,6 +1,6 @@
 // hosts.ts — Left panel: host card rendering and CRUD modals.
 import { GetHosts, SaveHost, DeleteHost } from '../wailsjs/go/main/App';
-import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
+import { EventsOn } from '../wailsjs/runtime/runtime';
 import type { Host, HostFormData } from './types';
 import { OPEN_TAB_EVENT } from './types';
 
@@ -438,9 +438,9 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
 
     await render();
 
-    const hostEvtId = EventsOn('hosts:updated', () => {
+    const unsub = EventsOn('hosts:updated', () => {
         void render();
     });
 
-    return () => { EventsOff('hosts:updated', hostEvtId); };
+    return () => { unsub(); };
 }

@@ -1,33 +1,40 @@
 // @ts-check
 // Cynan
-let __eventId = 0;
-const __listeners = new Map(); // name -> Map<id, cb>
+/**
+ * In-memory event registry matching Wails v2 runtime semantics.
+ * EventsOn returns an unsubscribe closure (removes just that listener).
+ * EventsOff removes ALL listeners for the given event name(s).
+ */
+const __listeners = new Map(); // eventName -> Set<callback>
 
 export function EventsOn(eventName, callback) {
-  const id = String(++__eventId);
-  if (!__listeners.has(eventName)) __listeners.set(eventName, new Map());
-  __listeners.get(eventName).set(id, callback);
-  return id;
-}
-
-export function EventsOff(eventName, ...eventIDs) {
-  const m = __listeners.get(eventName);
-  if (!m) return;
-  for (const id of eventIDs) m.delete(id);
+  if (!__listeners.has(eventName)) __listeners.set(eventName, new Set());
+  __listeners.get(eventName).add(callback);
+  return () => {
+    __listeners.get(eventName)?.delete(callback);
+  };
 }
 
 export function EventsOnce(eventName, callback) {
-  const id = EventsOn(eventName, (...a) => {
-    EventsOff(eventName, id);
-    callback(...a);
-  });
-  return id;
+  let unsub;
+  const wrapper = (...args) => {
+    unsub();
+    callback(...args);
+  };
+  unsub = EventsOn(eventName, wrapper);
+  return unsub;
+}
+
+export function EventsOff(...eventNames) {
+  for (const name of eventNames) {
+    __listeners.delete(name);
+  }
 }
 
 export function EventsEmit(eventName, ...data) {
-  const m = __listeners.get(eventName);
-  if (!m) return;
-  for (const cb of m.values()) cb(...data);
+  const set = __listeners.get(eventName);
+  if (!set) return;
+  for (const cb of set) cb(...data);
 }
 
 export function EventsOffAll() {

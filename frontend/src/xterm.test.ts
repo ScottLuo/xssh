@@ -3,23 +3,16 @@ import type { Terminal } from '@xterm/xterm';
 
 /** A controllable in-memory event bus to drive Wails event subscriptions. */
 function createEventBus() {
-    let nextId = 0;
-    const listeners = new Map<string, Map<string, (...args: unknown[]) => void>>();
+    const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
     return {
-        on(event: string, cb: (...args: unknown[]) => void): string {
-            const id = `evt-${++nextId}`;
-            if (!listeners.has(event)) listeners.set(event, new Map());
-            listeners.get(event)!.set(id, cb);
-            return id;
-        },
-        off(event: string, ...ids: string[]): void {
-            const m = listeners.get(event);
-            if (!m) return;
-            for (const id of ids) m.delete(id);
+        on(event: string, cb: (...args: unknown[]) => void): () => void {
+            if (!listeners.has(event)) listeners.set(event, new Set());
+            listeners.get(event)!.add(cb);
+            return () => { listeners.get(event)?.delete(cb); };
         },
         emit(event: string, ...args: unknown[]): void {
-            const m = listeners.get(event);
-            if (m) for (const cb of m.values()) cb(...args);
+            const s = listeners.get(event);
+            if (s) for (const cb of s) cb(...args);
         },
     };
 }
@@ -46,7 +39,7 @@ let Resize: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
     bus = createEventBus();
-    vi.doMock('../wailsjs/runtime/runtime', () => ({ EventsOn: bus.on, EventsOff: bus.off }));
+    vi.doMock('../wailsjs/runtime/runtime', () => ({ EventsOn: bus.on }));
     Write = vi.fn().mockResolvedValue(undefined);
     Resize = vi.fn().mockResolvedValue(undefined);
     vi.doMock('../wailsjs/go/main/App', () => ({ Write, Resize }));

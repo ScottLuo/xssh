@@ -63,9 +63,14 @@ describe('wailsjs/go/main/App.js', () => {
     it('SaveHost delegates with a single argument', async () => {
         const { SaveHost } = await import('./go/main/App.js');
         const bridge = (window as unknown as Record<string, any>).go.main.App;
+        const host = {
+            id: 'h1', name: 'test', host: '10.0.0.1', port: 22,
+            user: 'root', auth_type: 'key', auth_secret: '', shell: '',
+            init_cmds: [], color: '#fff', created_at: '', updated_at: '',
+        };
 
-        await SaveHost({ id: 'h1', name: 'test' });
-        expect(bridge.SaveHost).toHaveBeenCalledWith({ id: 'h1', name: 'test' });
+        await SaveHost(host);
+        expect(bridge.SaveHost).toHaveBeenCalledWith(host);
     });
 
     it('OpenTab delegates with three arguments', async () => {
@@ -167,18 +172,23 @@ describe('wailsjs/runtime/runtime.js — Events', () => {
         expect(mod['Events']).toBeUndefined();
     });
 
-    it('EventsOn returns a string ID', async () => {
+    it('EventsOn returns an unsubscribe function', async () => {
         const { EventsOn } = await import('./runtime/runtime.js');
-        const id = EventsOn('test-event', vi.fn());
-        expect(typeof id).toBe('string');
-        expect(id.length).toBeGreaterThan(0);
+        const unsub = EventsOn('test-event', vi.fn());
+        expect(typeof unsub).toBe('function');
     });
 
-    it('EventsOn returns unique IDs for successive calls', async () => {
-        const { EventsOn } = await import('./runtime/runtime.js');
-        const id1 = EventsOn('evt', vi.fn());
-        const id2 = EventsOn('evt', vi.fn());
-        expect(id1).not.toBe(id2);
+    it('EventsOn unsubscribe function removes the specific listener', async () => {
+        const { EventsOn, EventsEmit } = await import('./runtime/runtime.js');
+        const cb1 = vi.fn();
+        const cb2 = vi.fn();
+        const unsub1 = EventsOn('evt', cb1);
+        EventsOn('evt', cb2);
+
+        unsub1();
+        EventsEmit('evt', 'x');
+        expect(cb1).not.toHaveBeenCalled();
+        expect(cb2).toHaveBeenCalledWith('x');
     });
 
     it('EventsEmit invokes the registered callback', async () => {
@@ -208,30 +218,32 @@ describe('wailsjs/runtime/runtime.js — Events', () => {
         expect(cb2).toHaveBeenCalledWith('data');
     });
 
-    it('EventsOff removes exactly the specified listener', async () => {
+    it('EventsOff removes all listeners for the specified event name', async () => {
         const { EventsOn, EventsOff, EventsEmit } = await import('./runtime/runtime.js');
         const cb1 = vi.fn();
         const cb2 = vi.fn();
-        const id1 = EventsOn('evt', cb1);
-        const id2 = EventsOn('evt', cb2);
+        EventsOn('evt', cb1);
+        EventsOn('evt', cb2);
 
-        EventsOff('evt', id1);
+        EventsOff('evt');
         EventsEmit('evt', 'x');
         expect(cb1).not.toHaveBeenCalled();
-        expect(cb2).toHaveBeenCalledWith('x');
+        expect(cb2).not.toHaveBeenCalled();
     });
 
-    it('EventsOff with multiple IDs removes all specified', async () => {
+    it('EventsOff with multiple event names removes listeners for each', async () => {
         const { EventsOn, EventsOff, EventsEmit } = await import('./runtime/runtime.js');
         const cb1 = vi.fn();
         const cb2 = vi.fn();
         const cb3 = vi.fn();
-        const id1 = EventsOn('evt', cb1);
-        const id2 = EventsOn('evt', cb2);
-        const _id3 = EventsOn('evt', cb3);
+        EventsOn('a', cb1);
+        EventsOn('b', cb2);
+        EventsOn('c', cb3);
 
-        EventsOff('evt', id1, id2);
-        EventsEmit('evt', 'x');
+        EventsOff('a', 'b');
+        EventsEmit('a', 'x');
+        EventsEmit('b', 'x');
+        EventsEmit('c', 'x');
         expect(cb1).not.toHaveBeenCalled();
         expect(cb2).not.toHaveBeenCalled();
         expect(cb3).toHaveBeenCalledWith('x');
@@ -239,7 +251,7 @@ describe('wailsjs/runtime/runtime.js — Events', () => {
 
     it('EventsOff for an unknown event name does not throw', async () => {
         const { EventsOff } = await import('./runtime/runtime.js');
-        expect(() => EventsOff('unknown-event', 'id-99')).not.toThrow();
+        expect(() => EventsOff('unknown-event')).not.toThrow();
     });
 
     it('EventsOnce fires the callback exactly once', async () => {
@@ -253,10 +265,10 @@ describe('wailsjs/runtime/runtime.js — Events', () => {
         expect(cb).toHaveBeenCalledWith(1);
     });
 
-    it('EventsOnce returns a string ID', async () => {
+    it('EventsOnce returns an unsubscribe function', async () => {
         const { EventsOnce } = await import('./runtime/runtime.js');
-        const id = EventsOnce('once', vi.fn());
-        expect(typeof id).toBe('string');
+        const unsub = EventsOnce('once', vi.fn());
+        expect(typeof unsub).toBe('function');
     });
 
     it('EventsOffAll removes all listeners for all events', async () => {
