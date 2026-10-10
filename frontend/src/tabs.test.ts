@@ -1,0 +1,218 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Host } from './types';
+import { OPEN_TAB_EVENT } from './types';
+
+function makeHost(overrides: Partial<Host> = {}): Host {
+    return {
+        id: 'h1',
+        name: 'Prod',
+        host: '10.0.0.1',
+        port: 22,
+        user: 'root',
+        auth_type: 'key',
+        auth_secret: 'secret',
+        shell: '',
+        init_cmds: [],
+        color: '#3498db',
+        created_at: '2026-10-09T00:00:00Z',
+        updated_at: '2026-10-09T00:00:00Z',
+        ...overrides,
+    };
+}
+
+/** Build a fake WiredTerminal matching what xterm.ts returns. */
+function fakeWired() {
+    const term = { focused: false, focus: () => { term.focused = true; } };
+    const fit = { fitted: 0, fit: () => { fit.fitted += 1; } };
+    const disposed = { value: false, dispose: () => { disposed.value = true; } };
+    return {
+        term,
+        fit,
+        dispose: disposed.dispose,
+        state: { term, fit, disposed },
+    };
+}
+
+let wiredFactory: ReturnType<typeof fakeWired>;
+let OpenTab: ReturnType<typeof vi.fn>;
+let CloseTab: ReturnType<typeof vi.fn>;
+
+function setupTabsMocks() {
+    OpenTab = vi.fn();
+    CloseTab = vi.fn().mockResolvedValue(undefined);
+    vi.doMock('../wailsjs/go/main/App', () => ({ App: { OpenTab, CloseTab } }));
+    vi.doMock('../wailsjs/runtime/runtime', () => ({
+        Events: { on: vi.fn().mockReturnValue(() => {}) },
+    }));
+    vi.doMock('./xterm', () => ({
+        createAndWireTerminal: vi.fn(() => wiredFactory),
+    }));
+}
+
+async function loadTabs() {
+    return import('./tabs');
+}
+
+beforeEach(async () => {
+    vi.resetModules();
+    document.body.innerHTML = '<div id="panel"></div>';
+});
+
+describe('initTabs', () => {
+    it('renders the tab strip and terminal area', async () => {
+        setupTabsMocks();
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        expect(container.querySelector('.tab-strip')).not.toBeNull();
+        expect(container.querySelector('.terminal-area')).not.toBeNull();
+        // Empty state is visible when there are no tabs.
+        expect(container.querySelector('.empty-state')).not.toBeNull();
+    });
+
+    it('opens a terminal tab when an open-tab event fires', async () => {
+        setupTabsMocks();
+        wiredFactory = fakeWired();
+        OpenTab.mockResolvedValue('sid-1');
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost();
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, { detail: host }));
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(OpenTab).toHaveBeenCalledWith('h1', 80, 24);
+        // A tab element was created.
+        expect(container.querySelector('.tab')).not.toBeNull();
+        expect(container.querySelector('.tab-label')!.textContent).toContain('Prod');
+        // The terminal container was added to the terminal area.
+        expect(container.querySelector('.terminal-container')).not.toBeNull();
+    });
+
+    it('closes the tab and calls CloseTab when the close button is clicked', async () => {
+        setupTabsMocks();
+        wiredFactory = fakeWired();
+        OpenTab.mockResolvedValue('sid-2');
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        document.dispatchEvent(
+            new CustomEvent(OPEN_TAB_EVENT, { detail: makeHost() }),
+        );
+        await new Promise((r) => setTimeout(r, 0));
+        expect(container.querySelector('.tab')).not.toBeNull();
+
+        // Click the close button on the tab.
+        const closeBtn = container.querySelector('.tab-close')!;
+        closeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+        expect(CloseTab).toHaveBeenCalledWith('sid-2');
+        expect(container.querySelector('.tab')).toBeNull();
+        expect(wiredFactory.state.disposed.value).toBe(true);
+    });
+
+    it('switches between two open tabs and focuses the active one', async () => {
+        setupTabsMocks();
+        OpenTab.mockResolvedValueOnce('sid-A').mockResolvedValueOnce('sid-B');
+        const wiredA = fakeWired();
+        const wiredB = fakeWired();
+        const create = vi.fn()
+            .mockReturnValueOnce(wiredA)
+            .mockReturnValueOnce(wiredB);
+        vi.doMock('./xterm', () => ({
+            createAndWireTerminal: create,
+        }));
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hA', name: 'HostA' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hB', name: 'HostB' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(container.querySelectorAll('.tab').length).toBe(2);
+        // Tab B is now active; only its container is visible.
+        const activeTab = container.querySelector('.tab.active')!;
+        expect(activeTab.querySelector('.tab-label')!.textContent)
+            .toContain('HostB');
+        const hidden = container.querySelectorAll('.terminal-container.hidden');
+        expect(hidden.length).toBe(1);
+        expect(wiredB.state.term.focused).toBe(true);
+        // Switch back to tab A by clicking it.
+        const tabA = [...container.querySelectorAll('.tab')]
+            .find((t) => t.querySelector('.tab-label')!.textContent!
+                .includes('HostA'))!;
+        tabA.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(tabA.classList.contains('active')).toBe(true);
+        expect(wiredA.state.term.focused).toBe(true);
+    });
+
+    it('switches to a remaining tab when the active tab is closed', async () => {
+        setupTabsMocks();
+        OpenTab.mockResolvedValueOnce('sid-C')
+            .mockResolvedValueOnce('sid-D');
+        const wiredC = fakeWired();
+        const wiredD = fakeWired();
+        const create = vi.fn()
+            .mockReturnValueOnce(wiredC)
+            .mockReturnValueOnce(wiredD);
+        vi.doMock('./xterm', () => ({
+            createAndWireTerminal: create,
+        }));
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hC', name: 'HostC' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hD', name: 'HostD' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+
+        // Close the active tab (HostD); HostC should become active.
+        const activeTab = container.querySelector('.tab.active')!;
+        activeTab.querySelector('.tab-close')!
+            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+        const remaining = container.querySelector('.tab')!;
+        expect(remaining.querySelector('.tab-label')!.textContent)
+            .toContain('HostC');
+        expect(remaining.classList.contains('active')).toBe(true);
+    });
+
+    it('shows an error tab when App.OpenTab rejects', async () => {
+        setupTabsMocks();
+        wiredFactory = fakeWired();
+        OpenTab.mockRejectedValue(new Error('connection refused'));
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        document.dispatchEvent(
+            new CustomEvent(OPEN_TAB_EVENT, { detail: makeHost() }),
+        );
+        await new Promise((r) => setTimeout(r, 0));
+
+        // An error tab with a label suffix is created.
+        const label = container.querySelector('.tab-label')!.textContent;
+        expect(label).toContain('(error)');
+        expect(container.querySelector('.terminal-container')!.textContent)
+            .toContain('connection refused');
+    });
+});

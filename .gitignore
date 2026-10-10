@@ -3,6 +3,8 @@ build/
 
 # Node
 frontend/node_modules/
+frontend/dist-types/
+frontend/coverage/
 
 # Go
 *.exe
