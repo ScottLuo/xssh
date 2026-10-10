@@ -14,24 +14,38 @@ The `internal/sshmgr` package is the core of the SSH subsystem. It provides:
 ```go
 package sshmgr
 
+// sshClient wraps an *ssh.Client plus liveness tracking. x/crypto exposes no
+// keepalive or health check on *ssh.Client, so a keepalive goroutine pings the
+// connection on an interval and marks it dead when the ping fails (SM-04).
+type sshClient struct {
+    client *ssh.Client
+    dead   chan struct{} // closed once the connection is determined dead
+    stop   chan struct{} // closed to stop the keepalive goroutine
+}
+
 // Manager manages SSH connections and terminal sessions.
 type Manager struct {
     mu       sync.Mutex
-    clients  map[string]*ssh.Client // hostID → persistent SSH client
-    sessions map[string]*Session    // sessionID → live tab session
+    clients  map[string]*sshClient // hostID → persistent SSH client
+    sessions map[string]*Session   // sessionID → live tab session
 }
 
 // Session represents a single terminal tab backed by an SSH PTY session.
 type Session struct {
-    ID     string
-    client *ssh.Client
-    sess   *ssh.Session
-    stdin  io.WriteCloser
-    stdout io.ReadCloser
-    stderr io.ReadCloser
-    onOut  func(data []byte) // callback to emit Wails event
-    ctx    context.Context
-    cancel context.CancelFunc
+    ID       string
+    hostID   string
+    client   *ssh.Client
+    sess     *ssh.Session
+    stdin    io.WriteCloser
+    stdout   io.Reader
+    stderr   io.Reader
+    onOut    func(data []byte) // callback to emit Wails event
+    onClosed func()            // invoked when both pump goroutines exit
+    ctx      context.Context
+    cancel   context.CancelFunc
+    wg       *sync.WaitGroup
+    done     chan struct{}    // closed when both pump goroutines have exited
+    closeOnce sync.Once       // makes Close idempotent
 }
 ```
 
@@ -59,20 +73,29 @@ One `*ssh.Client` per host, **not** per tab. This means:
 ### 3.4.1 Open (`Manager.OpenTab`)
 
 ```
-Input:  hostID string, hostCfg Host, cols, rows uint16, onOut func([]byte)
-Output: *Session, error
+Input:  ctx context.Context, hostID string, hostCfg Host, cols, rows uint16, onOut func([]byte)
+Output: (sid string, sess *Session, err error)
 ```
 
+The session ID is a ULID generated inside `OpenTab` (time-ordered, sortable), via
+`github.com/oklog/ulid/v2`.
+
 Steps:
-1. Obtain or create `*ssh.Client` for `hostID` (SM-01/SM-02).
+1. Obtain or create `*sshClient` for `hostID` (SM-01/SM-02/SM-03/SM-05).
 2. `client.NewSession()` → `sess`.
 3. `sess.RequestPty("xterm-256color", int(rows), int(cols), modes)`.
-4. `sess.Shell()` — start an **interactive login shell**.  
+4. `sess.StdinPipe()` / `sess.StdoutPipe()` / `sess.StderrPipe()`.
+   **Note**: x/crypto requires the pipes to be requested **before** the session
+   process starts; `StdinPipe()` after `Shell()` returns `ErrProcessStarted`.
+5. `sess.Shell()` — start an **interactive login shell**.  
    **Rationale**: Using `Shell()` (not `RequestExec`) ensures that shell builtins (`cd`, `export`, `alias`) and the user's `.bashrc`/`.zshrc` are in effect. This is what makes initial commands like `cd /work` persist.
-5. `sess.StdinPipe()` / `sess.StdoutPipe()` / `sess.StderrPipe()`.
-6. Register the `Session` in `Manager.sessions`.
-7. Start pump goroutines (stdout + stderr), each with `sync.WaitGroup`.
-8. If `hostCfg.InitCmds` is non-empty, write each command followed by `\n` to `stdin` in a goroutine (to avoid blocking the binding call).
+6. Generate a ULID session ID.
+7. Register the `Session` in `Manager.sessions`.
+8. Start pump goroutines (stdout + stderr + watcher) via `startPump`, which
+   stores a `*sync.WaitGroup` and a `done` channel on the `Session`.
+9. If `hostCfg.InitCmds` is non-empty, write each command followed by `\n` to
+   `stdin` in a goroutine after a 100 ms delay (to avoid blocking the binding
+   call and to let the shell prompt be ready).
 
 ### 3.4.2 Write (`Session.Write`)
 
@@ -92,7 +115,7 @@ Called from Wails binding `App.Write(sid, b64)` after base64 decode.
 
 ```go
 func (s *Session) Resize(cols, rows uint16) error {
-    return s.sess.WindowChange(int(rows), int(cols), 0, 0)
+    return s.sess.WindowChange(int(rows), int(cols))
 }
 ```
 
@@ -136,19 +159,26 @@ When the remote side closes the SSH channel:
 ### Pseudocode
 
 ```go
-func (s *Session) startPump() {
-    wg := &sync.WaitGroup{}
-    wg.Add(2)
-    go func() { defer wg.Done(); s.pumpReader(s.stdout) }()
-    go func() { defer wg.Done(); s.pumpReader(s.stderr) }()
+// startPump is launched once per Session from Manager.OpenTab. It stores the
+// WaitGroup and done channel on the Session so Manager.CloseTab can wait for
+// the pumps to drain.
+func startPump(s *Session) {
+    s.wg = &sync.WaitGroup{}
+    s.done = make(chan struct{})
+    s.wg.Add(2)
+    go func() { defer s.wg.Done(); pumpReader(s, s.stdout) }()
+    go func() { defer s.wg.Done(); pumpReader(s, s.stderr) }()
     go func() {
-        wg.Wait()
-        s.cancel() // cancel session context when both readers done
+        s.wg.Wait()
+        close(s.done)
+        if s.onClosed != nil {
+            s.onClosed() // emit ssh:closed:<sid> so the UI shows "[session ended]"
+        }
     }()
 }
 
-func (s *Session) pumpReader(r io.Reader) {
-    buf := make([]byte, 32*1024)
+func pumpReader(s *Session, r io.Reader) {
+    buf := make([]byte, pumpBufSize) // 32*1024
     for {
         select {
         case <-s.ctx.Done():
@@ -190,13 +220,15 @@ func (s *Session) pumpReader(r io.Reader) {
 | Auth failure | Return error; show "Auth failed" on the tab |
 | Remote host closes connection | Emit `ssh:closed` event; show "[session ended]" |
 | Network error mid-session | Pump detects error; emit `ssh:closed`; user can "Reconnect" |
-| PTY request rejected | Fall back to shell without PTY (degraded mode: no resize, no color); log a warning |
+| PTY request rejected | `OpenTab` returns an error (a PTY is required for an interactive terminal); the SSH channel is closed on failure. |
+| Unparseable private key (key auth) | Fall back to password auth with the raw secret; the dial surfaces a descriptive error. |
 
 ## 3.8 Dependencies
 
 | Package | Purpose |
 |---------|---------|
 | `golang.org/x/crypto/ssh` | SSH protocol implementation |
-| `golang.org/x/crypto/ssh/terminal` | PTY mode constants |
+| `github.com/oklog/ulid/v2` | ULID session ID generation |
+| `crypto/rand` | Entropy source for ULID generation |
 | `context` | Lifecycle management |
 | `sync` | Concurrency primitives |

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/scottluo/xssh/frontend"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -33,9 +31,4 @@ func main() {
 	if err != nil {
 		println("Error:", err.Error())
 	}
-}
-
-// domReady is called when the DOM is ready in the frontend.
-func (a *App) domReady(ctx context.Context) {
-	// Reserved for frontend initialization signals.
 }
