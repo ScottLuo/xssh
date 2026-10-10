@@ -254,19 +254,26 @@ import { EventsOn, EventsOff, EventsOnce, EventsEmit, EventsOffAll } from "../wa
 
 **Event subscription / unsubscribe:**
 
-`EventsOn` returns a **string event ID**. Unsubscribing is done by passing that ID to `EventsOff(eventName, eventId)`:
+`EventsOn` returns an **unsubscribe closure** (`() => void`). Call the returned function to remove just that specific listener:
 
 ```typescript
-// Subscribe — returns an event ID string
-const outId    = EventsOn(`ssh:out:${sessionId}`, (payload: string) => { ... });
-const closedId = EventsOn(`ssh:closed:${sessionId}`, () => { ... });
+// Subscribe — returns an unsubscribe closure
+const unsubOut    = EventsOn(`ssh:out:${sessionId}`, (payload: string) => { ... });
+const unsubClosed = EventsOn(`ssh:closed:${sessionId}`, () => { ... });
 
-// Unsubscribe — use the event ID
-EventsOff(`ssh:out:${sessionId}`, outId);
-EventsOff(`ssh:closed:${sessionId}`, closedId);
+// Unsubscribe — call the closure
+unsubOut();
+unsubClosed();
 ```
 
-> **Note**: Unlike the old pattern where `Events.on()` returned an unsubscribe closure, Wails v2's `EventsOn` returns an opaque string ID. You must store it and pass it to `EventsOff` to remove the handler.
+`EventsOff(...eventNames)` removes **all** listeners for the given event name(s). Use it when you want to remove every handler for a specific event:
+
+```typescript
+// Remove ALL listeners for the given event names
+EventsOff(`ssh:out:${sessionId}`, `ssh:closed:${sessionId}`);
+```
+
+> **Note**: `EventsOn` returns a per-listener unsubscribe closure (preferred for granular cleanup). `EventsOff` is a bulk removal for one or more event names. Store the closure returned by `EventsOn` and call it during component/tab/terminal teardown.
 
 ## 5.8 Performance Requirements
 
