@@ -51,6 +51,25 @@ class TabManager {
         this.tabStrip.setAttribute('role', 'tablist');
         this.tabStrip.setAttribute('aria-label', 'Terminal tabs');
 
+        // Left/Right arrow key navigation (spec §5.9).
+        this.tabStrip.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            e.preventDefault();
+            const allTabs = this.allTabIds();
+            if (allTabs.length === 0) return;
+            const currentIdx = this.activeSid ? allTabs.indexOf(this.activeSid) : -1;
+            let nextIdx: number;
+            if (e.key === 'ArrowRight') {
+                nextIdx = (currentIdx + 1) % allTabs.length;
+            } else {
+                nextIdx = currentIdx <= 0 ? allTabs.length - 1 : currentIdx - 1;
+            }
+            const targetSid = allTabs[nextIdx];
+            const targetEl = this.tabEls.get(targetSid);
+            if (targetEl) targetEl.focus();
+            this.switchTab(targetSid);
+        });
+
         this.emptyState = document.createElement('div');
         this.emptyState.className = 'empty-state';
         this.emptyState.textContent = 'Select a host to open a terminal';

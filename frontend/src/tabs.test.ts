@@ -215,4 +215,94 @@ describe('initTabs', () => {
         expect(container.querySelector('.terminal-container')!.textContent)
             .toContain('connection refused');
     });
+
+    it('navigates between tabs with ArrowRight and ArrowLeft keys', async () => {
+        setupTabsMocks();
+        OpenTab.mockResolvedValueOnce('sid-K1').mockResolvedValueOnce('sid-K2')
+            .mockResolvedValueOnce('sid-K3');
+        const wiredK1 = fakeWired();
+        const wiredK2 = fakeWired();
+        const wiredK3 = fakeWired();
+        const create = vi.fn()
+            .mockReturnValueOnce(wiredK1)
+            .mockReturnValueOnce(wiredK2)
+            .mockReturnValueOnce(wiredK3);
+        vi.doMock('./xterm', () => ({
+            createAndWireTerminal: create,
+        }));
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hK1', name: 'Alpha' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hK2', name: 'Beta' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hK3', name: 'Gamma' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+
+        const tabStrip = container.querySelector('.tab-strip')!;
+
+        // Currently Gamma (last opened) is active.
+        // Press ArrowLeft → Beta should become active.
+        tabStrip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        const activeTab1 = container.querySelector('.tab.active')!;
+        expect(activeTab1.querySelector('.tab-label')!.textContent).toContain('Beta');
+        expect(wiredK2.state.term.focused).toBe(true);
+
+        // Press ArrowRight → Gamma should become active again.
+        tabStrip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        const activeTab2 = container.querySelector('.tab.active')!;
+        expect(activeTab2.querySelector('.tab-label')!.textContent).toContain('Gamma');
+        expect(wiredK3.state.term.focused).toBe(true);
+
+        // Press ArrowLeft twice → should wrap around to Alpha (first tab).
+        tabStrip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        // Now Beta is active again.
+        tabStrip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        const activeTab3 = container.querySelector('.tab.active')!;
+        expect(activeTab3.querySelector('.tab-label')!.textContent).toContain('Alpha');
+        expect(wiredK1.state.term.focused).toBe(true);
+    });
+
+    it('wraps around when pressing ArrowRight on the last tab', async () => {
+        setupTabsMocks();
+        OpenTab.mockResolvedValueOnce('sid-W1').mockResolvedValueOnce('sid-W2');
+        const wiredW1 = fakeWired();
+        const wiredW2 = fakeWired();
+        const create = vi.fn()
+            .mockReturnValueOnce(wiredW1)
+            .mockReturnValueOnce(wiredW2);
+        vi.doMock('./xterm', () => ({
+            createAndWireTerminal: create,
+        }));
+
+        const { initTabs } = await loadTabs();
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hW1', name: 'First' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, {
+            detail: makeHost({ id: 'hW2', name: 'Second' }),
+        }));
+        await new Promise((r) => setTimeout(r, 0));
+
+        const tabStrip = container.querySelector('.tab-strip')!;
+        // Currently "Second" is active (last opened).
+        // ArrowRight should wrap to "First".
+        tabStrip.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        const activeTab = container.querySelector('.tab.active')!;
+        expect(activeTab.querySelector('.tab-label')!.textContent).toContain('First');
+        expect(wiredW1.state.term.focused).toBe(true);
+    });
 });

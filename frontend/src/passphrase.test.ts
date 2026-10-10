@@ -28,13 +28,25 @@ function findControls() {
     return { input, btn };
 }
 
+/**
+ * initPassflow() now returns a Promise that resolves only after the user
+ * successfully sets/unlocks the DB. The tests must:
+ *   1. Call initPassflow() and store the Promise (do NOT await it yet).
+ *   2. Wait for the UI to render (microtask flush).
+ *   3. Fill the input and click the button.
+ *   4. Await the stored Promise to verify success.
+ */
 describe('initPassflow', () => {
     beforeEach(async () => {
-        document.body.innerHTML =
-            '<div id="app"></div>';
+        document.body.innerHTML = '<div id="app"></div>';
         // Reset module registry between tests.
         vi.resetModules();
     });
+
+    /** Flush microtasks to let doInit's async chain complete. */
+    function flush(): Promise<void> {
+        return new Promise((r) => setTimeout(r, 0));
+    }
 
     it('detects first-run mode and calls SetupDB on submit', async () => {
         const { UnlockDB, SetupDB } = setupMocks();
@@ -43,7 +55,8 @@ describe('initPassflow', () => {
         SetupDB.mockResolvedValueOnce(undefined);
 
         const { initPassflow } = await loadPassflow();
-        await initPassflow();
+        const promise = initPassflow();
+        await flush(); // Let the async init complete and render the card.
 
         const { input, btn } = findControls();
         expect(input).not.toBeNull();
@@ -53,9 +66,11 @@ describe('initPassflow', () => {
             .toContain('Set Passphrase');
 
         input!.value = 'hunter2';
-        await Promise.resolve(btn!.click());
+        btn!.click();
+        const result = await promise;
 
         expect(SetupDB).toHaveBeenCalledWith('hunter2');
+        expect(result).toBe(true);
         // On success the passflow screen is cleared.
         expect(document.querySelector('.passflow-overlay')).toBeNull();
     });
@@ -68,17 +83,20 @@ describe('initPassflow', () => {
         SetupDB.mockResolvedValueOnce(undefined);
 
         const { initPassflow } = await loadPassflow();
-        await initPassflow();
+        const promise = initPassflow();
+        await flush();
 
         const { input, btn } = findControls();
         expect(document.querySelector('.passflow-title')!.textContent)
             .toContain('Unlock xssh');
 
         input!.value = 'hunter2';
-        await Promise.resolve(btn!.click());
+        btn!.click();
+        const result = await promise;
 
         expect(UnlockDB).toHaveBeenCalledWith('hunter2');
         expect(SetupDB).not.toHaveBeenCalled();
+        expect(result).toBe(true);
         expect(document.querySelector('.passflow-overlay')).toBeNull();
     });
 
@@ -88,16 +106,25 @@ describe('initPassflow', () => {
         UnlockDB.mockRejectedValueOnce(new Error('wrong passphrase')); // submit
 
         const { initPassflow } = await loadPassflow();
-        await initPassflow();
+        const promise = initPassflow();
+        await flush();
 
         const { input, btn } = findControls();
         input!.value = 'badpass';
-        await Promise.resolve(btn!.click());
+        btn!.click();
+        await flush(); // Let the async submit handler run.
 
         const errEl = document.querySelector('.passflow-error') as HTMLElement;
         expect(errEl.textContent).toContain('Wrong passphrase');
         // Screen remains.
         expect(document.querySelector('.passflow-overlay')).not.toBeNull();
+
+        // Now try with the correct passphrase to resolve.
+        UnlockDB.mockResolvedValueOnce(undefined);
+        input!.value = 'goodpass';
+        btn!.click();
+        const result = await promise;
+        expect(result).toBe(true);
     });
 
     it('shows "required" when submitting an empty passphrase', async () => {
@@ -105,13 +132,55 @@ describe('initPassflow', () => {
         UnlockDB.mockRejectedValueOnce(new Error('wrong passphrase')); // probe
 
         const { initPassflow } = await loadPassflow();
-        await initPassflow();
+        initPassflow();
+        await flush();
 
         const { input, btn } = findControls();
         input!.value = '';
-        await Promise.resolve(btn!.click());
+        btn!.click();
+        await flush();
 
         const errEl = document.querySelector('.passflow-error') as HTMLElement;
         expect(errEl.textContent).toContain('required');
+    });
+
+    it('resolves true when Enter key is pressed with a valid passphrase', async () => {
+        const { UnlockDB } = setupMocks();
+        UnlockDB.mockRejectedValueOnce(new Error('wrong passphrase')); // probe
+        UnlockDB.mockResolvedValueOnce(undefined); // submit
+
+        const { initPassflow } = await loadPassflow();
+        const promise = initPassflow();
+        await flush();
+
+        const { input } = findControls();
+        input!.value = 'pass123';
+        input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        const result = await promise;
+        expect(result).toBe(true);
+        expect(UnlockDB).toHaveBeenCalledWith('pass123');
+    });
+
+    it('disables the button while submitting', async () => {
+        const { UnlockDB } = setupMocks();
+        UnlockDB.mockRejectedValueOnce(new Error('wrong passphrase')); // probe
+        // Submit: delay the response to check button state.
+        let resolveUnlock: () => void;
+        UnlockDB.mockImplementationOnce(() => new Promise<void>((r) => { resolveUnlock = r; }));
+
+        const { initPassflow } = await loadPassflow();
+        const promise = initPassflow();
+        await flush();
+
+        const { input, btn } = findControls();
+        input!.value = 'pass';
+        btn!.click();
+        // Immediately after click, button should be disabled.
+        await flush();
+        expect(btn!.disabled).toBe(true);
+
+        resolveUnlock!();
+        await promise;
+        expect(btn!.disabled).toBe(false);
     });
 });
