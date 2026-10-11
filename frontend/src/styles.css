@@ -224,6 +224,9 @@ html, body {
 .tab .tab-close:hover { color: var(--fg); background: var(--border); }
 .tab.ended .tab-label { color: var(--fg-dim); font-style: italic; }
 
+/* Hide tabs that belong to a non-active host (see TabManager.setActiveHost). */
+.tab.hidden { display: none; }
+
 /* Inline rename input inside tab label */
 .tab .tab-label-edit {
     width: 80px;
