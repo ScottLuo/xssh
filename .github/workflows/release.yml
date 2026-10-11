@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.2.3). Leave empty to auto-increment."
+        required: false
+
+jobs:
+  compute-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute release tag
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+            if [[ "$TAG" != v* ]]; then
+              TAG="v$TAG"
+            fi
+          else
+            LATEST=$(git tag --list 'v*' --sort=-v:refname | head -1)
+            if [ -z "$LATEST" ]; then
+              TAG="v0.1.1"
+            else
+              MINOR=$(echo "$LATEST" | grep -oP '\d+(?=\z)')
+              TAG="${LATEST%.*}.$((MINOR + 1))"
+            fi
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+  build:
+    needs: compute-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: windows
+            arch: amd64
+            runner: windows-latest
+          - platform: darwin
+            arch: amd64
+            runner: macos-latest
+          - platform: darwin
+            arch: arm64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build (Linux)
+        if: matrix.platform == 'linux'
+        run: wails build -clean -platform linux -arch amd64
+
+      - name: Build (Windows)
+        if: matrix.platform == 'windows'
+        run: wails build -clean -platform windows -arch amd64
+
+      - name: Build (macOS)
+        if: matrix.platform == 'darwin'
+        run: wails build -clean -platform darwin -arch ${{ matrix.arch }}
+
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cd build/bin
+          zip -r "../../xssh-linux-amd64.zip" xssh resources/
+          cd ../..
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          cd build/bin
+          Compress-Archive -Path "xssh.exe", "resources" -DestinationPath "../../xssh-windows-amd64.zip"
+          cd ../..
+
+      - name: Package (macOS)
+        if: matrix.platform == 'darwin'
+        run: |
+          cd build/bin
+          zip -r "../../xssh-darwin-${{ matrix.arch }}.zip" xssh resources/
+          cd ../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xssh-${{ matrix.platform }}-${{ matrix.arch }}
+          path: "xssh-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+
+  release:
+    needs: [compute-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.compute-version.outputs.tag }}
+          name: "xssh ${{ needs.compute-version.outputs.tag }}"
+          generate_release_notes: true
+          files: |
+            dist/**/*.zip
