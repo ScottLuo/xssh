@@ -82,15 +82,15 @@ jobs:
 
       - name: Build (Linux)
         if: matrix.platform == 'linux'
-        run: wails build -clean -platform linux -arch amd64 -tags webkit2_41
+        run: wails build -clean -platform linux/amd64 -tags webkit2_41
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
-        run: wails build -clean -platform windows -arch amd64
+        run: wails build -clean -platform windows/amd64
 
       - name: Build (macOS)
         if: matrix.platform == 'darwin'
-        run: wails build -clean -platform darwin -arch ${{ matrix.arch }}
+        run: wails build -clean -platform darwin/${{ matrix.arch }}
 
       - name: Package (Linux)
         if: matrix.platform == 'linux'
