@@ -29,7 +29,7 @@ export function createTerminal(container: HTMLDivElement): { term: Terminal; fit
             cursor: '#aeafad',
         },
         allowProposedApi: true,
-        rightClickSelect: true,
+        rightClickSelectsWord: true,
     });
 
     const fit = new FitAddon();
