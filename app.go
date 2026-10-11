@@ -19,6 +19,10 @@ import (
 // in tests to capture events without a live Wails runtime context.
 var emitEvent = wailsRuntime.EventsEmit
 
+// windowShow is the function used to reveal the window. It can be overridden
+// in tests to avoid requiring a live Wails runtime context.
+var windowShow = wailsRuntime.WindowShow
+
 // App is the Wails application struct that exposes binding methods to the frontend.
 type App struct {
 	ctx      context.Context
@@ -268,8 +272,11 @@ func (a *App) SetSetting(key, value string) error {
 }
 
 // domReady is called when the DOM is ready in the frontend.
-// Reserved for frontend initialization signals.
-func (a *App) domReady(ctx context.Context) {}
+// Reveal the window now that the DOM is rendered, avoiding a blank/white flash
+// while still honoring the StartHidden intent during native window creation.
+func (a *App) domReady(ctx context.Context) {
+	windowShow(ctx)
+}
 
 // isWrongKeyErr checks whether an error from OpenWithKey indicates the
 // wrong encryption key was used (wrong passphrase).
