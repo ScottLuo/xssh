@@ -12,7 +12,7 @@ A cross-platform desktop SSH client built with **Go**, **Wails v2**, and **xterm
 
 - Go 1.20+
 - Node.js 18+
-- Wails CLI: `go install github.com/wails-cli/wails/v2/cmd/wails@latest`
+- Wails CLI: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
 
 ## Build & Run
 
