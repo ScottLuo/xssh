@@ -96,7 +96,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           cd build/bin
-          zip -r "../../xssh-linux-amd64.zip" xssh resources/
+          zip "../../xssh-linux-amd64.zip" xssh
           cd ../..
 
       - name: Package (Windows)
@@ -104,14 +104,14 @@ jobs:
         shell: pwsh
         run: |
           cd build/bin
-          Compress-Archive -Path "xssh.exe", "resources" -DestinationPath "../../xssh-windows-amd64.zip"
+          Compress-Archive -Path "xssh.exe" -DestinationPath "../../xssh-windows-amd64.zip"
           cd ../..
 
       - name: Package (macOS)
         if: matrix.platform == 'darwin'
         run: |
           cd build/bin
-          zip -r "../../xssh-darwin-${{ matrix.arch }}.zip" xssh resources/
+          zip -r "../../xssh-darwin-${{ matrix.arch }}.zip" xssh.app
           cd ../..
 
       - name: Upload artifact
