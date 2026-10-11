@@ -40,3 +40,14 @@ export interface TabEntry {
 
 /** Custom DOM event dispatched when a host card is clicked (open a tab). */
 export const OPEN_TAB_EVENT = 'xssh:newtab';
+
+/** Custom DOM event dispatched when a host is selected (switch active host view). */
+export const SELECT_HOST_EVENT = 'xssh:selecthost';
+
+/** Custom DOM event dispatched when tabs open/close so the host panel can update card state. */
+export const TABS_CHANGED_EVENT = 'xssh:tabschanged';
+
+/** Payload for TABS_CHANGED_EVENT: set of hostIDs that currently have open tabs. */
+export interface TabsChangedPayload {
+    hostsWithTabs: Set<string>;
+}

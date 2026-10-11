@@ -117,6 +117,27 @@ html, body {
     text-overflow: ellipsis;
 }
 
+/* Dull state: no open SSH tabs for this host */
+.host-card--dull .stripe {
+    filter: grayscale(1) brightness(0.35);
+}
+.host-card--dull .card-name {
+    color: var(--fg-dim);
+}
+.host-card--dull .card-meta {
+    color: var(--fg-dim);
+    opacity: 0.7;
+}
+
+/* Active state: this host is currently selected */
+.host-card--active {
+    border-color: var(--accent);
+    background: var(--bg-hover);
+}
+.host-card--active .stripe {
+    filter: none;
+}
+
 .host-card .card-actions {
     position: absolute;
     top: 6px;
@@ -201,6 +222,35 @@ html, body {
 }
 .tab .tab-close:hover { color: var(--fg); background: var(--border); }
 .tab.ended .tab-label { color: var(--fg-dim); font-style: italic; }
+
+/* [+] add-tab button in the tab strip */
+.tab-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    min-width: 32px;
+    border-right: 1px solid var(--border);
+    border-left: none;
+    background: transparent;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.tab-add:hover {
+    background: var(--bg-hover);
+    color: var(--fg);
+}
+.tab-add:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.tab-add:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
 
 .terminal-area {
     flex: 1 1 auto;

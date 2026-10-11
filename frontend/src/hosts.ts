@@ -1,10 +1,9 @@
 // hosts.ts — Left panel: host card rendering and CRUD modals.
 import { GetHosts, SaveHost, DeleteHost } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
-import type { Host, HostFormData } from './types';
-import { OPEN_TAB_EVENT } from './types';
+import type { Host, HostFormData, TabsChangedPayload } from './types';
+import { SELECT_HOST_EVENT, TABS_CHANGED_EVENT } from './types';
 
-/** Preset color swatches offered in the host form. */
 const COLOR_PRESETS = [
     '#22c55e', // green
     '#ef4444', // red
@@ -25,7 +24,7 @@ export function truncateName(name: string, max = 20): string {
 /**
  * Render a single host card element.
  * - Left color stripe uses `host.color` (or gray fallback).
- * - Clicking (or pressing Enter/Space) dispatches OPEN_TAB_EVENT on `document`.
+ * - Clicking (or pressing Enter/Space) dispatches SELECT_HOST_EVENT on `document`.
  * - Hover reveals edit (✎) and delete (×) buttons.
  */
 export function renderHostCard(host: Host): HTMLElement {
@@ -33,7 +32,8 @@ export function renderHostCard(host: Host): HTMLElement {
     card.className = 'host-card';
     card.setAttribute('tabindex', '0');
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Open ${host.name}`);
+    card.setAttribute('aria-label', `Select ${host.name}`);
+    card.dataset.hostId = host.id;
 
     const stripe = document.createElement('div');
     stripe.className = 'stripe';
@@ -53,14 +53,14 @@ export function renderHostCard(host: Host): HTMLElement {
     body.appendChild(name);
     body.appendChild(meta);
 
-    const openTab = (): void => {
-        document.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, { detail: host }));
+    const selectHost = (): void => {
+        document.dispatchEvent(new CustomEvent(SELECT_HOST_EVENT, { detail: host }));
     };
-    card.addEventListener('click', openTab);
+    card.addEventListener('click', selectHost);
     card.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            openTab();
+            selectHost();
         }
     });
 
@@ -383,8 +383,10 @@ function generateId(): string {
  * - Renders the header ("Hosts" + "+" button) and the scrollable card list.
  * - Fetches hosts from Go and renders them.
  * - Subscribes to `hosts:updated` to re-fetch after CRUD operations.
+ * - Listens for TABS_CHANGED_EVENT to update host card "dull" state.
+ * - Listens for SELECT_HOST_EVENT to highlight the active host card.
  *
- * @returns a cleanup function that removes the `hosts:updated` subscription.
+ * @returns a cleanup function that removes all event subscriptions.
  */
 export async function initHosts(container: HTMLElement): Promise<() => void> {
     container.innerHTML = '';
@@ -416,7 +418,20 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
     list.className = 'host-list';
     container.appendChild(list);
 
-    const render = async (): Promise<void> => {
+    /** Track the set of host IDs that currently have open tabs. */
+    let hostsWithTabs = new Set<string>();
+
+    /** Update all card states based on current hostsWithTabs and active host. */
+    const updateCardStates = (activeHostId: string | null): void => {
+        list.querySelectorAll<HTMLElement>('.host-card').forEach((card) => {
+            const id = card.dataset.hostId;
+            if (!id) return;
+            card.classList.toggle('host-card--dull', !hostsWithTabs.has(id));
+            card.classList.toggle('host-card--active', id === activeHostId);
+        });
+    };
+
+    const render = async (activeHostId: string | null = null): Promise<void> => {
         list.innerHTML = '';
         let hosts: Host[] = [];
         try {
@@ -434,13 +449,41 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
         for (const h of hosts) {
             list.appendChild(renderHostCard(h));
         }
+        updateCardStates(activeHostId);
     };
 
     await render();
 
     const unsub = EventsOn('hosts:updated', () => {
-        void render();
+        // Preserve the active host when re-rendering.
+        const activeCard = list.querySelector<HTMLElement>('.host-card--active');
+        const activeId = activeCard?.dataset.hostId ?? null;
+        void render(activeId);
     });
 
-    return () => { unsub(); };
+    // Listen for TABS_CHANGED_EVENT to update dull state on host cards.
+    const onTabsChanged = (e: Event): void => {
+        const payload = (e as CustomEvent<TabsChangedPayload>).detail;
+        if (payload && payload.hostsWithTabs) {
+            hostsWithTabs = payload.hostsWithTabs;
+            const activeCard = list.querySelector<HTMLElement>('.host-card--active');
+            updateCardStates(activeCard?.dataset.hostId ?? null);
+        }
+    };
+    document.addEventListener(TABS_CHANGED_EVENT, onTabsChanged);
+
+    // Listen for SELECT_HOST_EVENT to update active card highlighting.
+    const onSelectHost = (e: Event): void => {
+        const host = (e as CustomEvent<Host>).detail;
+        if (host && typeof host.id === 'string') {
+            updateCardStates(host.id);
+        }
+    };
+    document.addEventListener(SELECT_HOST_EVENT, onSelectHost);
+
+    return () => {
+        unsub();
+        document.removeEventListener(TABS_CHANGED_EVENT, onTabsChanged);
+        document.removeEventListener(SELECT_HOST_EVENT, onSelectHost);
+    };
 }

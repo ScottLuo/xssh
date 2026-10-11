@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Host } from './types';
-import { OPEN_TAB_EVENT } from './types';
+import { SELECT_HOST_EVENT } from './types';
 
 function makeHost(overrides: Partial<Host> = {}): Host {
     return {
@@ -90,7 +90,7 @@ describe('initHosts', () => {
             .toContain('root@10.0.0.1:22');
     });
 
-    it('dispatches the open-tab event when a card is clicked', async () => {
+    it('dispatches SELECT_HOST_EVENT when a card is clicked', async () => {
         const { GetHosts } = setupHostsMocks();
         GetHosts.mockResolvedValue([makeHost({ id: 'abc', name: 'Prod' })]);
         const { initHosts } = await import('./hosts');
@@ -99,10 +99,10 @@ describe('initHosts', () => {
 
         let dispatched: unknown = null;
         const listener = (e: Event) => { dispatched = e; };
-        document.addEventListener(OPEN_TAB_EVENT, listener as EventListener);
+        document.addEventListener(SELECT_HOST_EVENT, listener as EventListener);
         const card = container.querySelector('.host-card')!;
         card.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        document.removeEventListener(OPEN_TAB_EVENT, listener as EventListener);
+        document.removeEventListener(SELECT_HOST_EVENT, listener as EventListener);
 
         expect(dispatched).not.toBeNull();
         const detail = (dispatched as CustomEvent).detail as Host;
