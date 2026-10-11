@@ -23,6 +23,9 @@ func newTestApp(t *testing.T) *App {
 	oldEmit := emitEvent
 	emitEvent = func(context.Context, string, ...interface{}) {}
 	t.Cleanup(func() { emitEvent = oldEmit })
+	oldWindowShow := windowShow
+	windowShow = func(context.Context) {}
+	t.Cleanup(func() { windowShow = oldWindowShow })
 	return &App{
 		ctx:    context.Background(),
 		dbPath: filepath.Join(dir, "xssh.db"),
