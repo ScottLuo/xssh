@@ -47,16 +47,17 @@ xssh/
 ├─ main.go
 ├─ app.go
 ├─ internal/
-│  ├─ host/          # Host model + persistence
 │  ├─ sshmgr/        # ConnectionManager, Session, PTY, pump
-│  └─ store/         # EncryptedDB, HostRepo, SettingsRepo
+│  └─ store/         # EncryptedDB, HostRepo, SettingsRepo, Host model
 ├─ frontend/
 │  ├─ index.html
-│  ├─ src/
-│  │  ├─ hosts.ts
-│  │  ├─ tabs.ts
-│  │  └─ xterm.ts
-│  └─ ...
+│  ├─ package.json
+│  ├─ tsconfig.json
+│  ├─ vite.config.ts
+│  ├─ assets.go      # Go embed for built assets
+│  ├─ dist/          # Vite build output (embedded)
+│  └─ src/
+│     └─ main.ts     # Frontend entry point
 ├─ docs/
 │  ├─ xssh_specification_main.md          ← this file
 │  ├─ xssh_specification_chapter_01_overview.md
@@ -65,5 +66,7 @@ xssh/
 │  ├─ xssh_specification_chapter_04_storage.md
 │  ├─ xssh_specification_chapter_05_frontend.md
 │  └─ xssh_specification_chapter_06_api_interface.md
+├─ wails.json
+├─ Makefile
 └─ go.mod
 ```

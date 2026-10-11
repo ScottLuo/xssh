@@ -1,0 +1,23 @@
+# Build output
+build/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/dist-types/
+frontend/coverage/
+
+# Go
+*.exe
+*.test
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

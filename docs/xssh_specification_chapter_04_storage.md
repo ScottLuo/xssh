@@ -330,6 +330,7 @@ type SettingsRepo struct {
 
 func (r *SettingsRepo) Get(ctx context.Context, key string) (string, error)
 func (r *SettingsRepo) Set(ctx context.Context, key, value string) error
+func (r *SettingsRepo) List(ctx context.Context) (map[string]string, error)
 ```
 
 Used for: terminal font size, color theme, default initial commands, etc.
