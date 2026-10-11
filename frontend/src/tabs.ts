@@ -41,6 +41,10 @@ class TabManager {
     private errorTabs = new Set<string>();
     /** hostID → last active tab sid for that host. */
     private lastActivePerHost = new Map<string, string>();
+    /** hostID → monotonically increasing counter for tab numbering. */
+    private tabCounter = new Map<string, number>();
+    /** sid → user-customized display name (if edited). */
+    private customNames = new Map<string, string>();
 
     private activeHostId: string | null = null;
     private activeHost: Host | null = null;
@@ -200,9 +204,10 @@ class TabManager {
             this.markEnded(sid);
         }));
 
-        // Create the tab DOM element.
-        const tabEl = this.createTabEl(sid, host);
-        this.tabStrip.appendChild(tabEl);
+        // Create the tab DOM element (insert before the [+] button).
+        const tabName = this.getTabName(host.id, host.name || host.host);
+        const tabEl = this.createTabEl(sid, host, tabName);
+        this.tabStrip.insertBefore(tabEl, this.addBtn);
         this.tabEls.set(sid, tabEl);
 
         // If the new tab's host is the active host, show it and switch to it.
@@ -355,24 +360,40 @@ class TabManager {
         }
     }
 
-    /** Create the tab DOM element with label + close button. */
-    private createTabEl(sid: string, host: Host): HTMLElement {
+    /**
+     * Generate a sequential tab display name for a host (e.g., "testhost-1", "testhost-2").
+     * The counter is per-host and monotonically increasing.
+     */
+    private getTabName(hostId: string, hostDisplayName: string): string {
+        const count = (this.tabCounter.get(hostId) ?? 0) + 1;
+        this.tabCounter.set(hostId, count);
+        const base = shortName(hostDisplayName);
+        return `${base}-${count}`;
+    }
+
+    /**
+     * Create the tab DOM element with label + close button.
+     * Supports double-click to edit the tab name.
+     */
+    private createTabEl(sid: string, host: Host, tabName?: string): HTMLElement {
+        const displayName = tabName ?? shortName(host.name || host.host);
         const tab = document.createElement('div');
         tab.className = 'tab';
         tab.dataset.hostId = host.id;
         tab.setAttribute('role', 'tab');
         tab.setAttribute('tabindex', '0');
-        tab.setAttribute('aria-label', `${host.name || host.host} tab`);
+        tab.setAttribute('aria-label', `${displayName} tab`);
 
         const label = document.createElement('span');
         label.className = 'tab-label';
-        label.textContent = shortName(host.name || host.host);
+        label.textContent = displayName;
+        label.title = 'Double-click to rename';
 
         const closeBtn = document.createElement('button');
         closeBtn.className = 'tab-close';
         closeBtn.textContent = '×';
         closeBtn.title = 'Close tab';
-        closeBtn.setAttribute('aria-label', `Close ${host.name || host.host}`);
+        closeBtn.setAttribute('aria-label', `Close ${displayName}`);
         closeBtn.addEventListener('click', (e: Event) => {
             e.stopPropagation();
             this.closeTab(sid);
@@ -390,9 +411,55 @@ class TabManager {
             }
         });
 
+        // Double-click on label to rename the tab.
+        label.addEventListener('dblclick', (e: Event) => {
+            e.stopPropagation();
+            this.editTabName(sid, tab, label);
+        });
+
         tab.appendChild(label);
         tab.appendChild(closeBtn);
         return tab;
+    }
+
+    /** Replace the tab label with an inline text input for renaming. */
+    private editTabName(sid: string, tabEl: HTMLElement, label: HTMLElement): void {
+        // Prevent double-editing.
+        if (label.querySelector('input')) return;
+
+        const currentName = label.textContent || '';
+        const input = document.createElement('input');
+        input.className = 'tab-label-edit';
+        input.value = currentName;
+        input.setAttribute('aria-label', 'Edit tab name');
+
+        label.textContent = '';
+        label.appendChild(input);
+        input.focus();
+        input.select();
+
+        const commit = (): void => {
+            const newName = input.value.trim();
+            if (newName && newName !== currentName) {
+                this.customNames.set(sid, newName);
+                label.textContent = newName;
+                tabEl.setAttribute('aria-label', `${newName} tab`);
+            } else {
+                label.textContent = currentName;
+            }
+        };
+
+        input.addEventListener('blur', commit, { once: true });
+        input.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                input.blur(); // triggers commit
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                label.textContent = currentName;
+                input.remove();
+            }
+        });
     }
 
     /** Create a tab that shows a connection error (used when OpenTab fails). */
@@ -407,7 +474,7 @@ class TabManager {
         const label = tabEl.querySelector('.tab-label');
         if (label) label.textContent = `${shortName(host.name || host.host)} (error)`;
 
-        this.tabStrip.appendChild(tabEl);
+        this.tabStrip.insertBefore(tabEl, this.addBtn);
         this.tabEls.set(id, tabEl);
         this.errorTabs.add(id);
         this.containers.set(id, container);

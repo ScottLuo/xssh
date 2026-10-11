@@ -203,7 +203,8 @@ html, body {
 .tab.active {
     background: var(--bg);
     color: var(--fg);
-    box-shadow: inset 0 2px 0 var(--accent);
+    font-weight: 600;
+    box-shadow: inset 0 3px 0 var(--accent), inset 0 4px 12px rgba(59, 130, 246, 0.12);
 }
 .tab .tab-label {
     max-width: 160px;
@@ -222,6 +223,19 @@ html, body {
 }
 .tab .tab-close:hover { color: var(--fg); background: var(--border); }
 .tab.ended .tab-label { color: var(--fg-dim); font-style: italic; }
+
+/* Inline rename input inside tab label */
+.tab .tab-label-edit {
+    width: 80px;
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    color: var(--fg);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+}
 
 /* [+] add-tab button in the tab strip */
 .tab-add {
