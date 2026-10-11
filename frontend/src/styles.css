@@ -24,6 +24,7 @@ html, body {
     font-size: 14px;
     line-height: 1.6;
     overflow: hidden;
+    color-scheme: dark;
 }
 
 #app {
@@ -278,6 +279,35 @@ html, body {
 .form-row textarea:focus {
     outline: none;
     border-color: var(--accent);
+}
+
+/* Dark theme: select dropdown */
+.form-row select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23d4d4d4' d='M6 8.5L1.5 4h9z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 30px;
+    cursor: pointer;
+}
+.form-row select option {
+    background: var(--bg-elev);
+    color: var(--fg);
+}
+
+/* Dark theme: number input spinners */
+.form-row input[type="number"] {
+    -moz-appearance: textfield;
+}
+.form-row input[type="number"]::-webkit-outer-spin-button,
+.form-row input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.form-row input[type="number"] {
+    -webkit-appearance: none;
 }
 .form-row textarea { resize: vertical; min-height: 60px; }
 .form-row .hint { font-size: 11px; color: var(--fg-dim); margin-top: 3px; }
