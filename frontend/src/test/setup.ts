@@ -16,7 +16,9 @@ class Terminal {
     focused = false;
     disposed = false;
     dataHandlers: Array<(d: string) => void> = [];
+    selectionHandlers: Array<() => void> = [];
     openCalls = 0;
+    selectedText = '';
 
     constructor(_opts?: unknown) {
         ((globalThis as unknown as Record<string, unknown>)
@@ -40,6 +42,19 @@ class Terminal {
     dispose(): void { this.disposed = true; }
     emitData(d: string): void {
         for (const cb of this.dataHandlers) cb(d);
+    }
+    onSelectionChange(cb: () => void): { dispose: () => void } {
+        this.selectionHandlers.push(cb);
+        const handlers = this.selectionHandlers;
+        return {
+            dispose(): void {
+                const i = handlers.indexOf(cb);
+                if (i >= 0) handlers.splice(i, 1);
+            },
+        };
+    }
+    getSelection(): string {
+        return this.selectedText;
     }
 }
 
