@@ -29,6 +29,7 @@ export function createTerminal(container: HTMLDivElement): { term: Terminal; fit
             cursor: '#aeafad',
         },
         allowProposedApi: true,
+        rightClickSelect: true,
     });
 
     const fit = new FitAddon();
@@ -92,6 +93,31 @@ export function wireIO(
         });
     });
 
+    // --- Auto-copy on selection (standard terminal behavior) ---
+    const selectionSub = term.onSelectionChange(() => {
+        const selection = term.getSelection();
+        if (selection) {
+            // Copy selected text to clipboard.
+            // navigator.clipboard.writeText is the modern API;
+            // falls back to document.execCommand for broader compatibility.
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(selection).catch(() => {
+                    /* clipboard may be unavailable (e.g., insecure context) */
+                });
+            } else {
+                // Fallback: hidden textarea + execCommand
+                const ta = document.createElement('textarea');
+                ta.value = selection;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+        }
+    });
+
     // --- Resize propagation ---
     const resizeObserver = new ResizeObserver(() => {
         try {
@@ -110,6 +136,7 @@ export function wireIO(
         unsubOut();
         unsubClosed();
         dataSubscription.dispose();
+        selectionSub.dispose();
         resizeObserver.disconnect();
         term.dispose();
     };
