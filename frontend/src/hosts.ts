@@ -437,8 +437,8 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
     });
 
     header.appendChild(label);
-    header.appendChild(settingsBtn);
     header.appendChild(addBtn);
+    header.appendChild(settingsBtn);
     container.appendChild(header);
 
     const list = document.createElement('div');
