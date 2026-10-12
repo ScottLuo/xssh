@@ -24,6 +24,8 @@ function setupHostsMocks() {
     const GetHosts = vi.fn();
     const SaveHost = vi.fn().mockResolvedValue(undefined);
     const DeleteHost = vi.fn().mockResolvedValue(undefined);
+    const GetSettings = vi.fn().mockResolvedValue({});
+    const SetSetting = vi.fn().mockResolvedValue(undefined);
     // Capture the EventsOn callback so tests can fire the `hosts:updated`
     // broadcast and assert the panel re-renders.
     let updateCb: (() => void) | null = null;
@@ -33,7 +35,7 @@ function setupHostsMocks() {
         return unsub;
     });
     vi.doMock('../wailsjs/go/main/App', () => ({
-        GetHosts, SaveHost, DeleteHost,
+        GetHosts, SaveHost, DeleteHost, GetSettings, SetSetting,
     }));
     vi.doMock('../wailsjs/runtime/runtime', () => ({
         EventsOn,
@@ -42,6 +44,8 @@ function setupHostsMocks() {
         GetHosts,
         SaveHost,
         DeleteHost,
+        GetSettings,
+        SetSetting,
         unsub,
         fireUpdate: () => { if (updateCb) updateCb(); },
     };
@@ -68,7 +72,7 @@ describe('initHosts', () => {
         await initHosts(container);
 
         expect(container.querySelector('.panel-header')).not.toBeNull();
-        expect(container.querySelector('.btn-icon')!.textContent).toBe('+');
+        expect(container.querySelector('[aria-label="Add host"]')!.textContent).toBe('+');
         // Empty state is shown when there are no hosts.
         expect(container.querySelector('.host-empty')).not.toBeNull();
     });
@@ -139,7 +143,7 @@ describe('initHosts', () => {
         const container = document.getElementById('panel')!;
         await initHosts(container);
 
-        const addBtn = container.querySelector('.btn-icon')!;
+        const addBtn = container.querySelector('[aria-label="Add host"]')!;
         addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
         expect(document.querySelector('.modal-overlay')).not.toBeNull();
@@ -147,6 +151,53 @@ describe('initHosts', () => {
         document.querySelector('.modal-overlay .btn')!
             .dispatchEvent(new MouseEvent('click', { bubbles: true }));
         expect(document.querySelector('.modal-overlay')).toBeNull();
+    });
+
+    it('opens the settings modal when the settings button is clicked', async () => {
+        const { GetHosts, SetSetting } = setupHostsMocks();
+        GetHosts.mockResolvedValue([]);
+        const { initHosts } = await import('./hosts');
+        const container = document.getElementById('panel')!;
+        await initHosts(container);
+
+        // A settings (gear) button with the expected aria-label exists.
+        const settingsBtn = container.querySelector('[aria-label="Settings"]')!;
+        expect(settingsBtn.textContent).toBe('⚙');
+
+        // Clicking it loads the current settings (async) then opens the modal
+        // with two number inputs.
+        settingsBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        // The click handler awaits loadTerminalSettings() before opening the
+        // modal, so let the microtask queue drain.
+        await new Promise((r) => setTimeout(r, 0));
+        const overlay = document.querySelector('.modal-overlay')!;
+        expect(overlay.querySelector('.modal-title')!.textContent).toBe('Settings');
+        const numberInputs = overlay.querySelectorAll('input[type="number"]');
+        expect(numberInputs.length).toBe(2);
+
+        // Edit the values and save; SetSetting is called for both keys and the
+        // settings-changed event is dispatched to open terminals.
+        const [fsInput, sbInput] = Array.from(numberInputs) as HTMLInputElement[];
+        fsInput.value = '20';
+        sbInput.value = '5000';
+        let detail: unknown = null;
+        const listener = (e: Event) => { detail = e; };
+        document.addEventListener('xssh:settingschanged', listener as EventListener);
+        overlay.querySelector('.btn.primary')!
+            .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        // Save handler awaits saveTerminalSettings() (two SetSetting calls).
+        await new Promise((r) => setTimeout(r, 0));
+        document.removeEventListener('xssh:settingschanged', listener as EventListener);
+
+        expect(SetSetting).toHaveBeenCalledTimes(2);
+        expect(SetSetting).toHaveBeenCalledWith('terminal.fontSize', '20');
+        expect(SetSetting).toHaveBeenCalledWith('terminal.scrollbackLines', '5000');
+        expect(document.querySelector('.modal-overlay')).toBeNull();
+        expect(detail).not.toBeNull();
+        expect((detail as CustomEvent).detail).toEqual({
+            fontSize: 20,
+            scrollbackLines: 5000,
+        });
     });
 });
 

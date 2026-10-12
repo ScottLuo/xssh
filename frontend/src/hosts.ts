@@ -1,8 +1,14 @@
 // hosts.ts — Left panel: host card rendering and CRUD modals.
 import { GetHosts, SaveHost, DeleteHost } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
+import {
+    loadTerminalSettings,
+    saveTerminalSettings,
+    showSettingsModal,
+    type TerminalSettings,
+} from './settings';
 import type { Host, HostFormData, TabsChangedPayload } from './types';
-import { SELECT_HOST_EVENT, TABS_CHANGED_EVENT } from './types';
+import { SELECT_HOST_EVENT, TABS_CHANGED_EVENT, SETTINGS_CHANGED_EVENT } from './types';
 
 const COLOR_PRESETS = [
     '#22c55e', // green
@@ -398,6 +404,26 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
     const label = document.createElement('span');
     label.textContent = 'Hosts';
 
+    // Settings button: opens the terminal settings modal (font size,
+    // scrollback lines). Saved values are persisted via SetSetting and
+    // broadcast to open terminals via SETTINGS_CHANGED_EVENT.
+    const settingsBtn = document.createElement('button');
+    settingsBtn.className = 'btn-icon';
+    settingsBtn.textContent = '⚙';
+    settingsBtn.title = 'Settings';
+    settingsBtn.setAttribute('aria-label', 'Settings');
+    settingsBtn.addEventListener('click', async () => {
+        const current = await loadTerminalSettings();
+        const result = await showSettingsModal(current);
+        if (result) {
+            await saveTerminalSettings(result);
+            document.dispatchEvent(new CustomEvent<TerminalSettings>(
+                SETTINGS_CHANGED_EVENT,
+                { detail: result },
+            ));
+        }
+    });
+
     const addBtn = document.createElement('button');
     addBtn.className = 'btn-icon';
     addBtn.textContent = '+';
@@ -410,8 +436,14 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
         }
     });
 
+    // Group the two buttons together on the right side of the header.
+    const actions = document.createElement('div');
+    actions.className = 'panel-header-actions';
+    actions.appendChild(addBtn);
+    actions.appendChild(settingsBtn);
+
     header.appendChild(label);
-    header.appendChild(addBtn);
+    header.appendChild(actions);
     container.appendChild(header);
 
     const list = document.createElement('div');

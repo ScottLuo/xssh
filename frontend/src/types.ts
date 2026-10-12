@@ -51,3 +51,9 @@ export const TABS_CHANGED_EVENT = 'xssh:tabschanged';
 export interface TabsChangedPayload {
     hostsWithTabs: Set<string>;
 }
+
+/**
+ * Custom DOM event dispatched when terminal settings (font size, scrollback)
+ * change so the tab panel can apply them live to open terminals.
+ */
+export const SETTINGS_CHANGED_EVENT = 'xssh:settingschanged';
