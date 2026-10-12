@@ -2,8 +2,14 @@
 import { OpenTab, CloseTab } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import { createAndWireTerminal, type WiredTerminal } from './xterm';
+import type { TerminalSettings } from './settings';
+import { loadTerminalSettings } from './settings';
 import type { Host, TabEntry, TabsChangedPayload } from './types';
-import { SELECT_HOST_EVENT, TABS_CHANGED_EVENT } from './types';
+import {
+    SELECT_HOST_EVENT,
+    TABS_CHANGED_EVENT,
+    SETTINGS_CHANGED_EVENT,
+} from './types';
 
 /** Truncate a host name to 12 characters for tab labels. */
 function shortName(name: string, max = 12): string {
@@ -49,6 +55,9 @@ class TabManager {
     private activeHostId: string | null = null;
     private activeHost: Host | null = null;
     private activeSid: string | null = null;
+
+    /** Current terminal settings, loaded from the backend at init. */
+    private settings: TerminalSettings = { fontSize: 14, scrollbackLines: 1000 };
 
     private tabStrip: HTMLElement;
     private terminalArea: HTMLElement;
@@ -187,8 +196,9 @@ class TabManager {
         container.classList.add('hidden');
         this.terminalArea.appendChild(container);
 
-        // Create and wire the xterm.js instance.
-        const wired = createAndWireTerminal(container, sid);
+        // Create and wire the xterm.js instance, applying the user's
+        // font size / scrollback settings at creation time.
+        const wired = createAndWireTerminal(container, sid, this.settings);
 
         this.tabs.set(sid, {
             sid,
@@ -508,6 +518,33 @@ class TabManager {
         const payload: TabsChangedPayload = { hostsWithTabs };
         document.dispatchEvent(new CustomEvent<TabsChangedPayload>(TABS_CHANGED_EVENT, { detail: payload }));
     }
+
+    /**
+     * Update the cached settings and apply them live to all open terminals.
+     * Font size and scrollback are mutable xterm.js options, so they can be
+     * changed on a running terminal without recreating it. After updating the
+     * active terminal's options we re-fit it so the new font size is reflected
+     * in the layout immediately.
+     */
+    applySettings(s: TerminalSettings): void {
+        this.settings = { ...s };
+        for (const [sid, wired] of this.terminals) {
+            try {
+                wired.term.options.fontSize = s.fontSize;
+                wired.term.options.scrollback = s.scrollbackLines;
+            } catch {
+                /* terminal may be disposed */
+            }
+            // Re-fit the active terminal so the new font size takes effect.
+            if (sid === this.activeSid) {
+                try {
+                    wired.fit.fit();
+                } catch {
+                    /* container may be detached */
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -549,7 +586,23 @@ export function initTabs(container: HTMLElement): () => void {
     };
     document.addEventListener(SELECT_HOST_EVENT, onSelectHost);
 
+    // Load the persisted terminal settings so newly opened tabs inherit the
+    // user's font size / scrollback.
+    void loadTerminalSettings().then((s) => {
+        mgr.applySettings(s);
+    });
+
+    // Apply settings live to all open terminals when the user saves them.
+    const onSettingsChanged = (e: Event): void => {
+        const s = (e as CustomEvent<TerminalSettings>).detail;
+        if (s && typeof s.fontSize === 'number') {
+            mgr.applySettings(s);
+        }
+    };
+    document.addEventListener(SETTINGS_CHANGED_EVENT, onSettingsChanged);
+
     return () => {
         document.removeEventListener(SELECT_HOST_EVENT, onSelectHost);
+        document.removeEventListener(SETTINGS_CHANGED_EVENT, onSettingsChanged);
     };
 }

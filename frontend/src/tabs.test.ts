@@ -32,10 +32,20 @@ interface WiredState {
     focusCalls: number;
     disposeCalls: number;
     closedCalls: number;
-    term: { focus: () => void; dispose: () => void };
+    term: {
+        focus: () => void;
+        dispose: () => void;
+        /** Mutable xterm.js options, updated live by TabManager.applySettings. */
+        options: { fontSize: number; scrollback: number };
+    };
     termFocussed: boolean;
 }
-function fakeWired(sid: string, cols = 80, rows = 24):
+function fakeWired(
+    sid: string,
+    cols = 80,
+    rows = 24,
+    opts?: { fontSize?: number; scrollbackLines?: number },
+):
     { state: WiredState; fit: { fit: () => void }; term: WiredState['term']; dispose: () => void } {
     const state: WiredState = {
         cols, rows, sid,
@@ -43,6 +53,10 @@ function fakeWired(sid: string, cols = 80, rows = 24):
         term: {
             focus: () => { state.focusCalls += 1; state.termFocussed = true; },
             dispose: () => { state.term.disposeCalls = (state.term.disposeCalls ?? 0) + 1; },
+            options: {
+                fontSize: opts?.fontSize ?? 14,
+                scrollback: opts?.scrollbackLines ?? 1000,
+            },
         },
         termFocussed: false,
     };
@@ -51,7 +65,7 @@ function fakeWired(sid: string, cols = 80, rows = 24):
     return { state, fit, term: state.term, dispose };
 }
 
-function setupTabsMocks() {
+function setupTabsMocks(settings?: { fontSize: number; scrollbackLines: number }) {
     const OpenTab = vi.fn().mockImplementation(
         (_hostId: string, cols: number, rows: number) =>
             Promise.resolve(`sid_${cols}_${rows}_${Math.random()}`),
@@ -65,14 +79,36 @@ function setupTabsMocks() {
     });
     vi.doMock('../wailsjs/go/main/App', () => ({ OpenTab, CloseTab }));
     vi.doMock('../wailsjs/runtime/runtime', () => ({ EventsOn }));
+    // Mock the settings module so initTabs can load settings without a backend.
+    const loadTerminalSettings = vi.fn().mockResolvedValue({
+        fontSize: settings?.fontSize ?? 14,
+        scrollbackLines: settings?.scrollbackLines ?? 1000,
+    });
+    vi.doMock('./settings', () => ({
+        loadTerminalSettings,
+        saveTerminalSettings: vi.fn().mockResolvedValue(undefined),
+    }));
+    // Capture the settings options passed to createAndWireTerminal on each call.
+    const createOpts: Array<{ fontSize?: number; scrollbackLines?: number }> = [];
+    // Record the fake wired instances so tests can inspect live option mutation.
+    const created: Array<{ term: { options: { fontSize: number; scrollback: number } } }> = [];
     vi.doMock('./xterm', () => ({
-        createAndWireTerminal: vi.fn((_c: HTMLDivElement, sid: string) =>
-            fakeWired(sid)),
+        createAndWireTerminal: vi.fn((_c: HTMLDivElement, sid: string, opts?: {
+            fontSize?: number; scrollbackLines?: number;
+        }) => {
+            const wired = fakeWired(sid, 80, 24, opts);
+            createOpts.push(opts ?? {});
+            created.push(wired);
+            return wired;
+        }),
     }));
     return {
         OpenTab,
         CloseTab,
         EventsOn,
+        loadTerminalSettings,
+        createOpts,
+        created,
         fireClosed: (sid: string) => {
             const cb = subs.get(`ssh:closed:${sid}`);
             if (cb) cb();
@@ -395,5 +431,80 @@ describe('initTabs', () => {
         const activeTab = getActiveTab(container)!;
         expect(activeTab).not.toBeNull();
         expect(activeTab.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('passes loaded settings to createAndWireTerminal when opening a new tab', async () => {
+        const mocks = setupTabsMocks({ fontSize: 22, scrollbackLines: 5000 });
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost({ name: 'Prod' });
+        selectHost(host);
+        clickAdd(container);
+        // allow initTabs' loadTerminalSettings() to resolve
+        await new Promise((r) => setTimeout(r, 0));
+        // allow the openTab OpenTab call to resolve
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(mocks.loadTerminalSettings).toHaveBeenCalled();
+        expect(mocks.createOpts.length).toBe(1);
+        expect(mocks.createOpts[0]).toEqual({ fontSize: 22, scrollbackLines: 5000 });
+    });
+
+    it('applies settings live to open terminals when SETTINGS_CHANGED_EVENT fires', async () => {
+        const mocks = setupTabsMocks();
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost({ name: 'Prod' });
+        selectHost(host);
+        clickAdd(container);
+        // allow initTabs' loadTerminalSettings() to resolve
+        await new Promise((r) => setTimeout(r, 0));
+        // allow the openTab OpenTab call to resolve
+        await new Promise((r) => setTimeout(r, 0));
+
+        // One fake wired terminal now exists; its options start at the defaults.
+        expect(mocks.created.length).toBe(1);
+        const wired = mocks.created[0];
+        expect(wired.term.options).toEqual({ fontSize: 14, scrollback: 1000 });
+
+        // Dispatch the settings-changed event; TabManager.applySettings should
+        // mutate the open terminal's options live.
+        const { SETTINGS_CHANGED_EVENT } = await import('./types');
+        document.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {
+            detail: { fontSize: 30, scrollbackLines: 10000 },
+        }));
+
+        // The xterm.js option `scrollback` maps from `scrollbackLines`.
+        expect(wired.term.options.fontSize).toBe(30);
+        expect(wired.term.options.scrollback).toBe(10000);
+    });
+
+    it('ignores SETTINGS_CHANGED_EVENT payloads with a non-numeric fontSize', async () => {
+        const mocks = setupTabsMocks();
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost({ name: 'Prod' });
+        selectHost(host);
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(mocks.created.length).toBe(1);
+        const wired = mocks.created[0];
+        const { SETTINGS_CHANGED_EVENT } = await import('./types');
+
+        // Invalid payload: no numeric fontSize → listener should not apply.
+        document.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {
+            detail: { scrollbackLines: 500 },
+        }));
+        // Options remain the initial defaults because the guard rejected the payload.
+        expect(wired.term.options.fontSize).toBe(14);
+        expect(wired.term.options.scrollback).toBe(1000);
     });
 });
