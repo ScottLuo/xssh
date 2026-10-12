@@ -54,6 +54,11 @@ html, body {
     font-size: 14px;
     border-bottom: 1px solid var(--border);
 }
+.panel-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
 
 .btn-icon {
     background: transparent;

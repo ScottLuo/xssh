@@ -436,9 +436,14 @@ export async function initHosts(container: HTMLElement): Promise<() => void> {
         }
     });
 
+    // Group the two buttons together on the right side of the header.
+    const actions = document.createElement('div');
+    actions.className = 'panel-header-actions';
+    actions.appendChild(addBtn);
+    actions.appendChild(settingsBtn);
+
     header.appendChild(label);
-    header.appendChild(addBtn);
-    header.appendChild(settingsBtn);
+    header.appendChild(actions);
     container.appendChild(header);
 
     const list = document.createElement('div');
