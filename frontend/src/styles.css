@@ -232,6 +232,13 @@ html, body {
 /* Hide tabs that belong to a non-active host (see TabManager.setActiveHost). */
 .tab.hidden { display: none; }
 
+/* Drag-to-reorder affordance */
+.tab-dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+.tab-dragging .tab-close { cursor: grabbing; }
+
 /* Inline rename input inside tab label */
 .tab .tab-label-edit {
     width: 80px;

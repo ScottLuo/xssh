@@ -508,3 +508,106 @@ describe('initTabs', () => {
         expect(wired.term.options.scrollback).toBe(1000);
     });
 });
+
+describe('tab drag-to-reorder', () => {
+    beforeEach(async () => {
+        vi.resetModules();
+        document.body.innerHTML = '<div id="panel"></div>';
+    });
+
+    it('marks each tab as draggable and stores its sid in a data attribute', async () => {
+        setupTabsMocks();
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost({ name: 'Prod' });
+        selectHost(host);
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+
+        const tab = container.querySelector('.tab') as HTMLElement;
+        expect(tab.draggable).toBe(true);
+        expect(tab.dataset.sid).toBeTruthy();
+    });
+
+    it('adds and removes the .tab-dragging class on dragstart/dragend', async () => {
+        setupTabsMocks();
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost({ name: 'Prod' });
+        selectHost(host);
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((r) => setTimeout(r, 0));
+
+        const tab = container.querySelector('.tab') as HTMLElement;
+        expect(tab.classList.contains('tab-dragging')).toBe(false);
+
+        tab.dispatchEvent(new Event('dragstart'));
+        expect(tab.classList.contains('tab-dragging')).toBe(true);
+
+        tab.dispatchEvent(new Event('dragend'));
+        expect(tab.classList.contains('tab-dragging')).toBe(false);
+    });
+
+    it('syncs internal tab order to the DOM order after a drop, affecting keyboard navigation', async () => {
+        setupTabsMocks();
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const host = makeHost({ name: 'Prod' });
+        selectHost(host);
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+
+        const tabStrip = container.querySelector('.tab-strip')!;
+        const tabA = findTabByLabel(container, 'Prod-1')!;
+        const tabB = findTabByLabel(container, 'Prod-2')!;
+
+        // Initial DOM order: [A, B]. Simulate dragging B to before A.
+        tabStrip.insertBefore(tabB, tabA);
+        // The drop ends; dragend triggers syncOrderFromDom.
+        tabB.dispatchEvent(new Event('dragend'));
+
+        // Now DOM + internal order is [B, A]. Activate B (first in DOM).
+        clickTab(tabB);
+        expect(getActiveTab(container)).toBe(tabB);
+
+        // ArrowRight from B (index 0 in [B, A]) should move to A (index 1).
+        tabStrip.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'ArrowRight', bubbles: true, cancelable: true,
+        }));
+        expect(getActiveTab(container)).toBe(tabA);
+    });
+
+    it('keeps tabs from a non-active host hidden and unaffected by reorder', async () => {
+        setupTabsMocks();
+        const { initTabs } = await import('./tabs');
+        const container = document.getElementById('panel')!;
+        initTabs(container);
+
+        const hostA = makeHost({ id: 'hA', name: 'HostA' });
+        const hostB = makeHost({ id: 'hB', name: 'HostB' });
+
+        selectHost(hostA);
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+        const tabA = container.querySelector('.tab') as HTMLElement;
+        tabA.dispatchEvent(new Event('dragstart'));
+        tabA.dispatchEvent(new Event('dragend'));
+
+        selectHost(hostB);
+        clickAdd(container);
+        await new Promise((r) => setTimeout(r, 0));
+
+        // HostA's tab should still be hidden while HostB is active.
+        expect(tabA.classList.contains('hidden')).toBe(true);
+    });
+});
