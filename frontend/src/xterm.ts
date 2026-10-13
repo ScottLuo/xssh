@@ -77,10 +77,14 @@ export function wireIO(
     // --- Output from Go (coalesced via rAF) ---
     let pending: string[] = [];
     let flushing = false;
+    // Streaming TextDecoder to correctly handle multi-byte UTF-8 sequences
+    // that may be split across chunk boundaries.
+    const decoder = new TextDecoder('utf-8');
 
     const unsubOut = EventsOn(`ssh:out:${sessionId}`, (payload: unknown) => {
         const b64 = payload as string;
-        pending.push(atob(b64));
+        const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        pending.push(decoder.decode(bytes));
 
         if (!flushing) {
             flushing = true;
