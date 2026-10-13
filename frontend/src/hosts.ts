@@ -192,10 +192,15 @@ export function showHostModal(existing?: Host): Promise<Host | null> {
         authTypeSelect.value = existing?.auth_type ?? 'password';
 
         const authSecretInput = document.createElement('input');
-        authSecretInput.type = 'text';
+        authSecretInput.type = authTypeSelect.value === 'password' ? 'password' : 'text';
         authSecretInput.value = existing?.auth_secret ?? '';
         authSecretInput.setAttribute('aria-label', 'Auth secret');
-        authSecretInput.placeholder = 'Path to key file or password';
+        authSecretInput.placeholder = authTypeSelect.value === 'password' ? 'Password' : 'Path to key file';
+        authTypeSelect.addEventListener('change', () => {
+            const isPassword = authTypeSelect.value === 'password';
+            authSecretInput.type = isPassword ? 'password' : 'text';
+            authSecretInput.placeholder = isPassword ? 'Password' : 'Path to key file';
+        });
 
         const shellInput = document.createElement('input');
         shellInput.value = existing?.shell ?? '';
