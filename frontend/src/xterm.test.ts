@@ -143,3 +143,144 @@ describe('wireIO / createAndWireTerminal', () => {
         expect(term.written.length).toBe(0);
     });
 });
+
+describe('wireIO — auto-copy on selection (debounced)', () => {
+    let writeText: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+        writeText = vi.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText },
+            writable: true,
+            configurable: true,
+        });
+    });
+
+    it('copies only the final stable selection after rapid selection changes', async () => {
+        vi.useFakeTimers();
+        try {
+            const { createAndWireTerminal } = await import('./xterm');
+            const container = document.createElement('div');
+            createAndWireTerminal(container, 'sid-copy-1');
+            const instances = (globalThis as unknown as Record<string, unknown>)
+                .__xtermInstances as Array<FakeTerm>;
+            const term = instances[instances.length - 1];
+
+            // Simulate a drag: multiple selection changes with growing text
+            (term as unknown as { selectedText: string }).selectedText = 'line1';
+            term.selectionHandlers[0]();
+
+            (term as unknown as { selectedText: string }).selectedText = 'line1\nline2';
+            term.selectionHandlers[0]();
+
+            (term as unknown as { selectedText: string }).selectedText = 'line1\nline2\nline3';
+            term.selectionHandlers[0]();
+
+            // Before the 150 ms debounce expires, clipboard should NOT have been written yet.
+            expect(writeText).not.toHaveBeenCalled();
+
+            // Advance past the debounce window.
+            vi.advanceTimersByTime(150);
+
+            // Exactly one write with the final, complete selection.
+            expect(writeText).toHaveBeenCalledTimes(1);
+            expect(writeText).toHaveBeenCalledWith('line1\nline2\nline3');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not write to clipboard when selection is cleared before debounce', async () => {
+        vi.useFakeTimers();
+        try {
+            const { createAndWireTerminal } = await import('./xterm');
+            const container = document.createElement('div');
+            createAndWireTerminal(container, 'sid-copy-2');
+            const instances = (globalThis as unknown as Record<string, unknown>)
+                .__xtermInstances as Array<FakeTerm>;
+            const term = instances[instances.length - 1];
+
+            // Set a partial selection.
+            (term as unknown as { selectedText: string }).selectedText = 'partial';
+            term.selectionHandlers[0]();
+
+            // Clear the selection before the 150 ms debounce fires.
+            (term as unknown as { selectedText: string }).selectedText = '';
+            term.selectionHandlers[0]();
+
+            // Advance past the debounce window.
+            vi.advanceTimersByTime(200);
+
+            // No write should have occurred.
+            expect(writeText).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('dispose() clears the pending selection timer so no write occurs after teardown', async () => {
+        vi.useFakeTimers();
+        try {
+            const { createAndWireTerminal } = await import('./xterm');
+            const container = document.createElement('div');
+            const wired = createAndWireTerminal(container, 'sid-copy-3');
+            const instances = (globalThis as unknown as Record<string, unknown>)
+                .__xtermInstances as Array<FakeTerm>;
+            const term = instances[instances.length - 1];
+
+            // Set a selection and trigger the handler.
+            (term as unknown as { selectedText: string }).selectedText = 'text-to-copy';
+            term.selectionHandlers[0]();
+
+            // Dispose before the debounce fires.
+            wired.dispose();
+
+            // Advance past the debounce window.
+            vi.advanceTimersByTime(200);
+
+            // No write should have occurred after dispose.
+            expect(writeText).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('falls back to execCommand when navigator.clipboard is unavailable', async () => {
+        vi.useFakeTimers();
+        const execCommandMock = vi.fn().mockReturnValue(true);
+        document.execCommand = execCommandMock;
+        try {
+            // Remove clipboard API to trigger the fallback path.
+            Object.defineProperty(navigator, 'clipboard', {
+                value: undefined,
+                writable: true,
+                configurable: true,
+            });
+
+            const { createAndWireTerminal } = await import('./xterm');
+            const container = document.createElement('div');
+            createAndWireTerminal(container, 'sid-copy-4');
+            const instances = (globalThis as unknown as Record<string, unknown>)
+                .__xtermInstances as Array<FakeTerm>;
+            const term = instances[instances.length - 1];
+
+            (term as unknown as { selectedText: string }).selectedText = 'fallback text';
+            term.selectionHandlers[0]();
+
+            vi.advanceTimersByTime(150);
+
+            // execCommand should have been called with 'copy'.
+            expect(execCommandMock).toHaveBeenCalledWith('copy');
+            // The navigator.clipboard.writeText mock should NOT have been called.
+            expect(writeText).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+            // Restore clipboard for subsequent tests.
+            Object.defineProperty(navigator, 'clipboard', {
+                value: { writeText },
+                writable: true,
+                configurable: true,
+            });
+        }
+    });
+});

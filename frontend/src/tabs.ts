@@ -51,6 +51,8 @@ class TabManager {
     private tabCounter = new Map<string, number>();
     /** sid → user-customized display name (if edited). */
     private customNames = new Map<string, string>();
+    /** sid of the tab currently being dragged (for drag-and-drop reorder). */
+    private draggingSid: string | null = null;
 
     private activeHostId: string | null = null;
     private activeHost: Host | null = null;
@@ -89,6 +91,24 @@ class TabManager {
             const targetEl = this.tabEls.get(targetSid);
             if (targetEl) targetEl.focus();
             this.switchTab(targetSid);
+        });
+
+        // Drag-to-reorder: live-preview the drop position during dragover.
+        this.tabStrip.addEventListener('dragover', (e: DragEvent) => {
+            e.preventDefault();
+            const dragging = this.draggingSid;
+            if (!dragging) return;
+            const dragEl = this.tabEls.get(dragging);
+            if (!dragEl) return;
+            const afterEl = this.getDragAfterElement(e.clientX, e.clientY, dragEl);
+            if (afterEl) {
+                this.tabStrip.insertBefore(dragEl, afterEl);
+            } else {
+                this.tabStrip.insertBefore(dragEl, this.addBtn);
+            }
+        });
+        this.tabStrip.addEventListener('drop', (e: DragEvent) => {
+            e.preventDefault();
         });
 
         this.emptyState = document.createElement('div');
@@ -390,9 +410,31 @@ class TabManager {
         const tab = document.createElement('div');
         tab.className = 'tab';
         tab.dataset.hostId = host.id;
+        tab.dataset.sid = sid;
         tab.setAttribute('role', 'tab');
         tab.setAttribute('tabindex', '0');
         tab.setAttribute('aria-label', `${displayName} tab`);
+        tab.draggable = true;
+
+        // Drag-to-reorder: set data on dragstart, sync order on dragend.
+        tab.addEventListener('dragstart', (e: DragEvent) => {
+            this.draggingSid = sid;
+            tab.classList.add('tab-dragging');
+            // dataTransfer may be null in some environments; guard both usages.
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                try {
+                    e.dataTransfer.setData('text/sid', sid);
+                } catch {
+                    /* setData can throw in some browsers */
+                }
+            }
+        });
+        tab.addEventListener('dragend', () => {
+            tab.classList.remove('tab-dragging');
+            this.draggingSid = null;
+            this.syncOrderFromDom();
+        });
 
         const label = document.createElement('span');
         label.className = 'tab-label';
@@ -542,6 +584,52 @@ class TabManager {
                 } catch {
                     /* container may be detached */
                 }
+            }
+        }
+    }
+
+    /**
+     * Find the tab element that should come after the pointer position.
+     * Used to live-preview the drop position during dragover: returns the
+     * first same-host tab whose horizontal midpoint is to the right of the
+     * pointer, or null if the dragged tab should be placed at the end.
+     */
+    private getDragAfterElement(x: number, y: number, draggingEl: HTMLElement): HTMLElement | null {
+        const siblings = Array.from(this.tabStrip.querySelectorAll<HTMLElement>('.tab'))
+            .filter((t) => t !== draggingEl && !t.classList.contains('hidden'));
+        for (const t of siblings) {
+            const rect = t.getBoundingClientRect();
+            const midX = rect.left + rect.width / 2;
+            // Only consider tabs on the same vertical band and to the right of the pointer.
+            if (y >= rect.top && y <= rect.bottom && x < midX) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Rebuild this.tabs / this.errorTabs so their insertion order matches the
+     * current DOM order of the tab strip. Because Map and Set both preserve
+     * insertion order, and visibleTabIds() iterates them in order, keeping the
+     * DOM order in sync keeps keyboard navigation and per-host ordering
+     * consistent with the user's manual arrangement.
+     */
+    private syncOrderFromDom(): void {
+        const domOrder: string[] = Array.from(this.tabStrip.querySelectorAll<HTMLElement>('.tab'))
+            .map((el) => el.dataset.sid)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+        for (const id of domOrder) {
+            // Re-insert in DOM order to reorder without losing entries.
+            const entry = this.tabs.get(id);
+            if (entry) {
+                this.tabs.delete(id);
+                this.tabs.set(id, entry);
+            }
+            if (this.errorTabs.has(id)) {
+                this.errorTabs.delete(id);
+                this.errorTabs.add(id);
             }
         }
     }

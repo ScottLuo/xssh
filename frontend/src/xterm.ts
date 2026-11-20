@@ -77,10 +77,14 @@ export function wireIO(
     // --- Output from Go (coalesced via rAF) ---
     let pending: string[] = [];
     let flushing = false;
+    // Streaming TextDecoder to correctly handle multi-byte UTF-8 sequences
+    // that may be split across chunk boundaries.
+    const decoder = new TextDecoder('utf-8');
 
     const unsubOut = EventsOn(`ssh:out:${sessionId}`, (payload: unknown) => {
         const b64 = payload as string;
-        pending.push(atob(b64));
+        const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        pending.push(decoder.decode(bytes));
 
         if (!flushing) {
             flushing = true;
@@ -111,27 +115,53 @@ export function wireIO(
     });
 
     // --- Auto-copy on selection (standard terminal behavior) ---
+    // Debounce the clipboard write to avoid racing multiple async
+    // writeText calls during a mouse-drag selection. During a drag,
+    // onSelectionChange fires on every mouse-move event (~16 ms apart),
+    // producing dozens of in-flight writeText Promises. Without debouncing,
+    // an earlier (partial) write may resolve after a later (complete) write,
+    // leaving the clipboard with only a subset of the selection.
+    const DEBOUNCE_MS = 150;
+    let selectionTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastSelection = '';
+
+    const flushSelection = (): void => {
+        if (!lastSelection) return;
+        const text = lastSelection;
+        lastSelection = '';
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).catch(() => {
+                /* clipboard may be unavailable (e.g., insecure context) */
+            });
+        } else {
+            // Fallback: hidden textarea + execCommand
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+    };
+
     const selectionSub = term.onSelectionChange(() => {
         const selection = term.getSelection();
+        // Cancel any pending write from a previous (incomplete) selection.
+        if (selectionTimer !== null) {
+            clearTimeout(selectionTimer);
+            selectionTimer = null;
+        }
         if (selection) {
-            // Copy selected text to clipboard.
-            // navigator.clipboard.writeText is the modern API;
-            // falls back to document.execCommand for broader compatibility.
-            if (navigator.clipboard?.writeText) {
-                navigator.clipboard.writeText(selection).catch(() => {
-                    /* clipboard may be unavailable (e.g., insecure context) */
-                });
-            } else {
-                // Fallback: hidden textarea + execCommand
-                const ta = document.createElement('textarea');
-                ta.value = selection;
-                ta.style.position = 'fixed';
-                ta.style.left = '-9999px';
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-            }
+            lastSelection = selection;
+            selectionTimer = setTimeout(() => {
+                selectionTimer = null;
+                flushSelection();
+            }, DEBOUNCE_MS);
+        } else {
+            // Selection cleared — reset so we don't re-write an old value.
+            lastSelection = '';
         }
     });
 
@@ -150,6 +180,10 @@ export function wireIO(
 
     // --- Cleanup ---
     const dispose = (): void => {
+        if (selectionTimer !== null) {
+            clearTimeout(selectionTimer);
+            selectionTimer = null;
+        }
         unsubOut();
         unsubClosed();
         dataSubscription.dispose();
