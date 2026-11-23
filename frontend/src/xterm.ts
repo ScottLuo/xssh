@@ -58,6 +58,46 @@ export function createTerminal(
 }
 
 /**
+ * Copy text to the system clipboard.
+ *
+ * Uses the async Clipboard API when available, falling back to a hidden
+ * textarea + `execCommand('copy')` for older webviews. Failures are
+ * swallowed (e.g. the clipboard is unavailable in an insecure context).
+ * This is the single source of truth for clipboard writes so the auto-copy
+ * path and the right-click menu share identical behavior.
+ */
+function copyToClipboard(text: string): void {
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {
+            /* clipboard may be unavailable (e.g., insecure context) */
+        });
+    } else {
+        // Fallback: hidden textarea + execCommand.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    }
+}
+
+/**
+ * Read text from the system clipboard.
+ *
+ * `navigator.clipboard.readText` requires a user activation; a right-click
+ * provides one on the Wails webviews. Resolves to the clipboard text, or
+ * rejects when the API is unsupported so callers treat the paste as a no-op.
+ */
+function readClipboard(): Promise<string> {
+    return navigator.clipboard?.readText
+        ? navigator.clipboard.readText()
+        : Promise.reject(new Error('clipboard.readText unsupported'));
+}
+
+/**
  * Wire up I/O between an xterm.js instance and a Go SSH session.
  *
  * - Keystrokes from the terminal are base64-encoded and sent to Go via App.Write.
@@ -129,21 +169,7 @@ export function wireIO(
         if (!lastSelection) return;
         const text = lastSelection;
         lastSelection = '';
-        if (navigator.clipboard?.writeText) {
-            navigator.clipboard.writeText(text).catch(() => {
-                /* clipboard may be unavailable (e.g., insecure context) */
-            });
-        } else {
-            // Fallback: hidden textarea + execCommand
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-        }
+        copyToClipboard(text);
     };
 
     const selectionSub = term.onSelectionChange(() => {
@@ -165,6 +191,108 @@ export function wireIO(
         }
     });
 
+    // --- Right-click context menu (Copy / Paste / Clear) ---
+    // xterm.js does not draw its own OS context menu, and
+    // `rightClickSelectsWord` (set in createTerminal) hijacks right-click to
+    // select the word under the cursor. We therefore attach our own
+    // `contextmenu` handler to the terminal element that suppresses the native
+    // menu, re-focuses the terminal (so keyboard paste is reliable afterwards),
+    // and shows a small Copy / Paste / Clear menu at the cursor.
+    //
+    // Paste reads the clipboard and routes the text through `term.paste()`,
+    // which emits xterm's native `onData` event → the base64 pipeline above →
+    // App.Write. No other I/O code changes are required.
+    let ctxMenu: HTMLElement | null = null;
+    let onDocPointerDown: ((e: PointerEvent) => void) | null = null;
+    let onDocKeydown: ((e: KeyboardEvent) => void) | null = null;
+
+    const dismissContextMenu = (): void => {
+        if (onDocPointerDown) {
+            document.removeEventListener('pointerdown', onDocPointerDown);
+            onDocPointerDown = null;
+        }
+        if (onDocKeydown) {
+            document.removeEventListener('keydown', onDocKeydown);
+            onDocKeydown = null;
+        }
+        if (ctxMenu && ctxMenu.parentNode) {
+            ctxMenu.parentNode.removeChild(ctxMenu);
+        }
+        ctxMenu = null;
+    };
+
+    const makeMenuItem = (label: string, onActivate: () => void): HTMLElement => {
+        const item = document.createElement('div');
+        item.className = 'xssh-ctx-item';
+        item.textContent = label;
+        item.addEventListener('click', (e: MouseEvent) => {
+            e.stopPropagation();
+            dismissContextMenu();
+            onActivate();
+        });
+        return item;
+    };
+
+    const showContextMenu = (x: number, y: number): void => {
+        dismissContextMenu();
+
+        const menu = document.createElement('div');
+        menu.className = 'xssh-ctx-menu';
+
+        // Copy: current selection (consistent with the auto-copy path).
+        menu.appendChild(makeMenuItem('Copy', () => {
+            const sel = term.getSelection();
+            if (sel) copyToClipboard(sel);
+        }));
+        // Paste: read clipboard → term.paste → onData → App.Write.
+        menu.appendChild(makeMenuItem('Paste', () => {
+            readClipboard()
+                .then(text => {
+                    if (text) term.paste(text);
+                })
+                .catch(() => {
+                    /* clipboard read failed or unsupported — no-op */
+                });
+        }));
+        // Clear: reset the visible terminal buffer.
+        menu.appendChild(makeMenuItem('Clear', () => {
+            term.clear();
+        }));
+
+        document.body.appendChild(menu);
+
+        // Position at the cursor, clamped so the menu stays in the viewport.
+        const menuW = menu.offsetWidth || 120;
+        const menuH = menu.offsetHeight || 90;
+        const left = Math.min(x, window.innerWidth - menuW - 2);
+        const top = Math.min(y, window.innerHeight - menuH - 2);
+        menu.style.left = `${Math.max(0, left)}px`;
+        menu.style.top = `${Math.max(0, top)}px`;
+
+        ctxMenu = menu;
+
+        // Dismiss on any outside pointer interaction or the Escape key.
+        onDocPointerDown = (e: PointerEvent) => {
+            if (ctxMenu && !ctxMenu.contains(e.target as Node)) {
+                dismissContextMenu();
+            }
+        };
+        onDocKeydown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') dismissContextMenu();
+        };
+        document.addEventListener('pointerdown', onDocPointerDown, true);
+        document.addEventListener('keydown', onDocKeydown, true);
+    };
+
+    const onContextMenu = (e: MouseEvent): void => {
+        e.preventDefault(); // suppress the native menu
+        term.focus();       // re-acquire focus so paste is reliable
+        showContextMenu(e.clientX, e.clientY);
+    };
+
+    const ctxTarget = term.element ?? container;
+    ctxTarget.addEventListener('contextmenu', onContextMenu);
+
     // --- Resize propagation ---
     const resizeObserver = new ResizeObserver(() => {
         try {
@@ -184,6 +312,9 @@ export function wireIO(
             clearTimeout(selectionTimer);
             selectionTimer = null;
         }
+        // Remove the context-menu listener and any open menu.
+        ctxTarget.removeEventListener('contextmenu', onContextMenu);
+        dismissContextMenu();
         unsubOut();
         unsubClosed();
         dataSubscription.dispose();
