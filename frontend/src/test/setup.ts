@@ -8,6 +8,11 @@ import { vi } from 'vitest';
 /**
  * Fake xterm.js Terminal. Records writes, focus, and dispose, and lets tests
  * drive `onData` callbacks via `emitData`.
+ *
+ * Also exposes an `element` (a real HTMLElement) so the right-click
+ * context-menu handler can attach/detach DOM listeners, plus `paste` and
+ * `clear` mirroring the real xterm API: `paste(text)` routes the text through
+ * the `onData` pipeline exactly like real xterm.js does.
  */
 class Terminal {
     cols = 80;
@@ -19,14 +24,32 @@ class Terminal {
     selectionHandlers: Array<() => void> = [];
     openCalls = 0;
     selectedText = '';
+    /** Records text passed to `paste()` (mirrors xterm paste → onData). */
+    pasted: string[] = [];
+    /** Number of times `clear()` was called. */
+    clearCalls = 0;
+    /** The terminal's root DOM node (present after `open()`). */
+    element: HTMLElement | undefined;
 
     constructor(_opts?: unknown) {
+        // xterm.js exposes `element` only after `open()`.
+        this.element = document.createElement('div');
+        this.element.className = 'xterm';
         ((globalThis as unknown as Record<string, unknown>)
             .__xtermInstances as Array<unknown>).push(this);
     }
 
     loadAddon(_addon?: unknown): void { /* no-op */ }
     open(_container?: HTMLElement): void { this.openCalls += 1; }
+    /**
+     * Route pasted text through the `onData` pipeline, mirroring real
+     * xterm.js `paste()` which emits the data event.
+     */
+    paste(text: string): void {
+        this.pasted.push(text);
+        this.emitData(text);
+    }
+    clear(): void { this.clearCalls += 1; }
     onData(cb: (d: string) => void): { dispose: () => void } {
         this.dataHandlers.push(cb);
         const handlers = this.dataHandlers;

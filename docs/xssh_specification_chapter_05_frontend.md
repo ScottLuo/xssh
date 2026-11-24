@@ -205,6 +205,46 @@ When a tab is closed:
 3. Remove the container div from the DOM
 4. Call `CloseTab(sessionId)`
 
+### 5.5.6 Right-Click Context Menu (Copy / Paste / Clear)
+
+xterm.js is a headless renderer: it does not draw its own OS context menu. It
+only renders to a DOM element and focuses a hidden internal `<textarea>` so that
+keyboard events (typing and the native browser `paste` event for `Ctrl/Cmd+V`)
+reach it. Because `rightClickSelectsWord` is enabled, a right-click is otherwise
+hijacked to select the word under the cursor and the native menu is suppressed —
+so there was no discoverable way to paste.
+
+To fix this, `wireIO` attaches a `contextmenu` listener on the terminal element
+(`term.element`, falling back to the container). On a right-click it:
+
+1. **Suppresses** the native menu (`e.preventDefault()`).
+2. **Re-focuses** the terminal (`term.focus()`) so that subsequent keyboard
+   paste (`Ctrl/Cmd+V`) is reliable even after the user has interacted with the
+   host panel or tab strip.
+3. **Shows** a small custom menu (`.xssh-ctx-menu`) at the cursor with three
+   items:
+   - **Copy** — `copyToClipboard(term.getSelection())` (consistent with the
+     auto-copy-on-selection path; the right-click-selected word is copied).
+   - **Paste** — `readClipboard().then(t => t && term.paste(t))`. This routes
+     the text through xterm's native `paste()` pipeline, which emits the
+     `onData` event → the base64 encoder → `App.Write`, so **no other I/O code
+     changes**. An empty or unreadable clipboard is a no-op.
+   - **Clear** — `term.clear()`.
+
+The menu is dismissed on any outside pointer interaction (capture-phase
+`pointerdown` on `document`), on the `Escape` key, or when `dispose()` is
+called.
+
+> **Keyboard equivalence**: `Ctrl/Cmd+V` (the native `paste` event on the
+> internal textarea) performs the same paste when the terminal is focused; the
+> right-click menu is the discoverable, focus-independent affordance.
+
+> **Design choice**: `rightClickSelectsWord` is kept `true` to minimize behavior
+> change — a right-click both selects the word *and* opens the menu, and the
+> menu's **Copy** uses `getSelection()` so the word is copied. The menu's
+> positioning is clamped to the viewport; styles live in `styles.css`
+> (`.xssh-ctx-menu` / `.xssh-ctx-item`).
+
 ## 5.6 Frontend File Structure
 
 ```

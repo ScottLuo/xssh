@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Terminal } from '@xterm/xterm';
 
 /** A controllable in-memory event bus to drive Wails event subscriptions. */
@@ -282,5 +282,222 @@ describe('wireIO — auto-copy on selection (debounced)', () => {
                 configurable: true,
             });
         }
+    });
+});
+
+describe('wireIO — right-click context menu (Copy / Paste / Clear)', () => {
+    let writeText: ReturnType<typeof vi.fn>;
+    let readText: ReturnType<typeof vi.fn>;
+
+    /** Returns the most recently created fake Terminal. */
+    const lastTerm = (): FakeTerm => {
+        const instances = ((globalThis as unknown as Record<string, unknown>)
+            .__xtermInstances as unknown as Array<FakeTerm>);
+        return instances[instances.length - 1];
+    };
+
+    /** Dispatch a `contextmenu` event on the terminal element. */
+    const rightClick = (term: FakeTerm, opts: { preventDefault?: boolean } = {}): void => {
+        const target = (term as unknown as { element: HTMLElement }).element;
+        const e = new MouseEvent('contextmenu', {
+            clientX: 120,
+            clientY: 80,
+            bubbles: true,
+            cancelable: true,
+        });
+        if (opts.preventDefault === false) e.preventDefault = vi.fn();
+        target.dispatchEvent(e);
+    };
+
+    const menuItem = (label: string): HTMLElement | null =>
+        Array.from(document.querySelectorAll('.xssh-ctx-item'))
+            .find(el => el.textContent === label) ?? null;
+
+    const menuInDom = (): boolean => document.querySelector('.xssh-ctx-menu') !== null;
+
+    /** Remove any menu left open so tests are isolated. */
+    const dismissAllMenus = (): void => {
+        document.querySelectorAll('.xssh-ctx-menu').forEach(m => m.remove());
+    };
+
+    beforeEach(async () => {
+        writeText = vi.fn().mockResolvedValue(undefined);
+        readText = vi.fn().mockResolvedValue('');
+        Object.defineProperty(navigator, 'clipboard', {
+            value: { writeText, readText },
+            writable: true,
+            configurable: true,
+        });
+    });
+
+    afterEach(() => {
+        // Remove any menu DOM node so document-wide queries in the next test
+        // don't pick up stale items.
+        dismissAllMenus();
+    });
+
+    it('right-click shows a menu with Copy/Paste/Clear, prevents the default, and focuses the terminal', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-1');
+        const term = lastTerm();
+        const target = (term as unknown as { element: HTMLElement }).element;
+        const e = new MouseEvent('contextmenu', {
+            clientX: 120,
+            clientY: 80,
+            bubbles: true,
+            cancelable: true,
+        });
+        const spy = vi.spyOn(e, 'preventDefault');
+        target.dispatchEvent(e);
+
+        expect(menuInDom()).toBe(true);
+        expect(menuItem('Copy')).not.toBeNull();
+        expect(menuItem('Paste')).not.toBeNull();
+        expect(menuItem('Clear')).not.toBeNull();
+        // Native menu suppressed and terminal re-focused.
+        expect(spy).toHaveBeenCalled();
+        expect(term.focused).toBe(true);
+    });
+
+    it('Copy copies the current selection to the clipboard', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-2');
+        const term = lastTerm();
+        (term as unknown as { selectedText: string }).selectedText = 'abc';
+        rightClick(term);
+
+        menuItem('Copy')!.click();
+        expect(writeText).toHaveBeenCalledWith('abc');
+    });
+
+    it('Paste routes clipboard text through term.paste to App.Write (end-to-end)', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-3');
+        const term = lastTerm();
+        readText.mockResolvedValue('ls -la');
+        rightClick(term);
+
+        const writeCallsBefore = Write.mock.calls.length;
+        menuItem('Paste')!.click();
+        await Promise.resolve(); // let readClipboard().then(...) run
+
+        expect(readText).toHaveBeenCalled();
+        expect((term as unknown as { pasted: string[] }).pasted).toContain('ls -la');
+        // The pasted text reached the Go backend via App.Write as base64.
+        const base64 = btoa(unescape(encodeURIComponent('ls -la')));
+        expect(Write).toHaveBeenCalledTimes(writeCallsBefore + 1);
+        expect(Write).toHaveBeenLastCalledWith('sid-ctx-3', base64);
+    });
+
+    it('Paste with an empty clipboard is a no-op (no term.paste, no Write)', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-4');
+        const term = lastTerm();
+        readText.mockResolvedValue('');
+        rightClick(term);
+
+        const writeCallsBefore = Write.mock.calls.length;
+        menuItem('Paste')!.click();
+        await Promise.resolve();
+
+        expect((term as unknown as { pasted: string[] }).pasted).toHaveLength(0);
+        expect(Write).toHaveBeenCalledTimes(writeCallsBefore);
+    });
+
+    it('Paste with an unsupported clipboard API is a no-op (no crash)', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-5');
+        const term = lastTerm();
+        // readText rejects (unsupported / permission denied).
+        readText.mockRejectedValue(new Error('denied'));
+        rightClick(term);
+
+        const writeCallsBefore = Write.mock.calls.length;
+        menuItem('Paste')!.click();
+        await Promise.resolve();
+
+        expect((term as unknown as { pasted: string[] }).pasted).toHaveLength(0);
+        expect(Write).toHaveBeenCalledTimes(writeCallsBefore);
+    });
+
+    it('Clear calls term.clear()', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-6');
+        const term = lastTerm();
+        rightClick(term);
+
+        expect((term as unknown as { clearCalls: number }).clearCalls).toBe(0);
+        menuItem('Clear')!.click();
+        expect((term as unknown as { clearCalls: number }).clearCalls).toBe(1);
+    });
+
+    it('clicking an outside pointer target dismisses the menu', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-7');
+        const term = lastTerm();
+        rightClick(term);
+        expect(menuInDom()).toBe(true);
+
+        // Simulate a pointer interaction outside the menu. jsdom does not
+        // define PointerEvent, so a MouseEvent with the same type triggers the
+        // capture-phase `pointerdown` listener (the handler only reads e.target).
+        document.body.dispatchEvent(
+            new MouseEvent('pointerdown', { bubbles: true, cancelable: true }),
+        );
+        expect(menuInDom()).toBe(false);
+    });
+
+    it('Escape key dismisses the menu', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-8');
+        const term = lastTerm();
+        rightClick(term);
+        expect(menuInDom()).toBe(true);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        expect(menuInDom()).toBe(false);
+    });
+
+    it('dispose() removes the listener so a later right-click does nothing', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        const wired = createAndWireTerminal(container, 'sid-ctx-9');
+        const term = lastTerm();
+
+        // First right-click: menu appears and the terminal is focused.
+        rightClick(term);
+        expect(menuInDom()).toBe(true);
+        expect(term.focused).toBe(true);
+        dismissAllMenus();
+
+        wired.dispose();
+
+        // Second right-click after dispose: no menu, and focus is not re-set
+        // (the handler has been detached from the element).
+        term.focused = false;
+        rightClick(term);
+        expect(menuInDom()).toBe(false);
+        expect(term.focused).toBe(false);
+    });
+
+    it('keyboard paste regression: term.emitData still writes base64 to App.Write', async () => {
+        const { createAndWireTerminal } = await import('./xterm');
+        const container = document.createElement('div');
+        createAndWireTerminal(container, 'sid-ctx-10');
+        const term = lastTerm();
+        const writeCallsBefore = Write.mock.calls.length;
+
+        term.emitData('X');
+
+        expect(Write).toHaveBeenCalledTimes(writeCallsBefore + 1);
+        expect(Write).toHaveBeenLastCalledWith('sid-ctx-10', btoa('X'));
     });
 });
